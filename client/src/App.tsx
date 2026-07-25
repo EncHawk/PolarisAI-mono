@@ -3,8 +3,15 @@ import type { FormEvent, MouseEvent as ReactMouseEvent, ReactNode } from 'react'
 
 import './App.css'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:3000'
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
+
+let _authToken: string | null = null
+
+function _getCookie(name: string): string | null {
+  const match = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'))
+  return match ? decodeURIComponent(match[1]) : null
+}
 
 type User = { id?: string; user_id?: string; email: string; name?: string | null; username?: string | null }
 type RepoEntry = { name: string; path: string; type: string; html_url?: string }
@@ -45,10 +52,12 @@ type CheckoutResponse = { order_id: string; amount: number; currency: string; pl
 type IconName = 'arrow' | 'book' | 'check' | 'chevron' | 'clock' | 'code' | 'file' | 'github' | 'google' | 'grid' | 'lock' | 'menu' | 'paperclip' | 'play' | 'plus' | 'search' | 'send' | 'settings' | 'spark' | 'terminal' | 'x'
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = { 'content-type': 'application/json' }
+  if (_authToken) headers['authorization'] = 'Bearer ' + _authToken
   const response = await fetch(API_BASE + path, {
     ...init,
     credentials: 'include',
-    headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+    headers: { ...headers, ...(init?.headers as Record<string, string> | undefined ?? {}) },
   })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) throw new Error(payload.detail ?? 'Request failed (' + response.status + ')')
@@ -515,11 +524,17 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('signup')
   const [checkingSession, setCheckingSession] = useState(true)
 
-  useEffect(() => { api<User>('/auth/me').then((current) => { setUser(current); setView('workspace') }).catch(() => undefined).finally(() => setCheckingSession(false)) }, [])
+  useEffect(() => {
+    _authToken = _getCookie('polaris_session')
+    api<User>('/auth/me')
+      .then((current) => { setUser(current); setView('workspace') })
+      .catch(() => { _authToken = null })
+      .finally(() => setCheckingSession(false))
+  }, [])
   const openStart = () => { if (user) setView('workspace'); else { setAuthMode('signup'); setAuthOpen(true) } }
   const openSignIn = () => { setAuthMode('login'); setAuthOpen(true) }
-  const authenticated = (current: User) => { setUser(current); setAuthOpen(false); setView('workspace') }
-  const logout = async () => { try { await api('/auth/logout', { method: 'POST' }) } catch { /* local state still resets */ } setUser(null); setView('landing') }
+  const authenticated = (current: User) => { _authToken = _getCookie('polaris_session'); setUser(current); setAuthOpen(false); setView('workspace') }
+  const logout = async () => { try { await api('/auth/logout', { method: 'POST' }) } catch { /* local state still resets */ } _authToken = null; setUser(null); setView('landing') }
 
   if (checkingSession) return <div className="boot-screen"><Logo /><span className="boot-line" /></div>
   return <>{user && view === 'workspace' ? <Workspace user={user} onLogout={logout} onBack={() => setView('landing')} /> : <Landing onStart={openStart} onSignIn={openSignIn} />}{authOpen && <AuthModal mode={authMode} setMode={setAuthMode} onClose={() => setAuthOpen(false)} onAuth={authenticated} />}</>

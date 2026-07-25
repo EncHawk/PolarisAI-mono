@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     INGEST_TOP_N_CITATIONS: int = 8
 
-    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:4173,http://localhost:3000"
 
     RATELIMIT_DEFAULT: str = "120/minute"
     RATELIMIT_AUTH: str = "15/minute"

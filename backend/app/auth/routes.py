@@ -16,16 +16,15 @@ from app.store.supabase import get_supabase
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
-def _set_session(response: Response, user_id: str, email: str) -> None:
+def _set_session(response: Response, user_id: str, email: str, is_https: bool = False) -> None:
     token = issue_session_jwt(user_id, email)
     s = get_settings()
     response.set_cookie(
         key="polaris_session",
         value=token,
-        httponly=True,
-        samesite="none",
+        samesite="none" if is_https else "lax",
         max_age=s.SESSION_TTL_SECONDS,
-        secure=True,
+        secure=is_https,
         path="/",
     )
 
@@ -89,7 +88,7 @@ async def signup(body: SignupIn, response: Response, request: Request):
     inserted = db.table("users").insert(row).execute().data
     user = inserted[0] if inserted else row
     get_cache()[f"user_exists:{email}"] = user["id"]
-    _set_session(response, user["id"], user["email"])
+    _set_session(response, user["id"], user["email"], request.url.scheme == "https")
     return _auth_out(user)
 
 
@@ -109,7 +108,7 @@ async def login(body: LoginIn, response: Response, request: Request):
     if not rows or not verify_password(body.password, rows[0].get("password_hash")):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid email or password")
     user = rows[0]
-    _set_session(response, user["id"], user["email"])
+    _set_session(response, user["id"], user["email"], request.url.scheme == "https")
     return _auth_out(user)
 
 
@@ -118,7 +117,7 @@ async def login(body: LoginIn, response: Response, request: Request):
 async def google_login(body: GoogleLoginIn, response: Response, request: Request):
     profile = verify_google_id_token(body.id_token)
     user = _upsert_oauth_user(profile.email, profile.username, profile.github, profile.x)
-    _set_session(response, user["id"], user["email"])
+    _set_session(response, user["id"], user["email"], request.url.scheme == "https")
     return _auth_out(user)
 
 
@@ -132,6 +131,14 @@ async def me(user: dict = Depends(current_user)):
 
 
 @router.post("/logout")
-async def logout(response: Response):
-    response.delete_cookie("polaris_session", path="/")
+async def logout(request: Request, response: Response):
+    is_https = request.url.scheme == "https"
+    response.set_cookie(
+        key="polaris_session",
+        value="",
+        max_age=0,
+        path="/",
+        secure=is_https,
+        samesite="none" if is_https else "lax",
+    )
     return {"ok": True}
