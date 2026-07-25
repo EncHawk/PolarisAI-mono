@@ -4,7 +4,7 @@ import json
 import uuid as _u
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from shared.redis_keys import redis_keys
+from app.redis_keys import redis_keys
 
 from app.auth.sessions import current_user
 from app.config import get_settings

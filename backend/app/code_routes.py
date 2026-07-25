@@ -20,7 +20,7 @@ import hmac
 import json
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from shared.redis_keys import redis_keys
+from app.redis_keys import redis_keys
 
 from app.auth.sessions import current_user
 from app.config import get_settings
