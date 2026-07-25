@@ -1,0 +1,46 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+*.pyo
+
+# Build outputs
+dist/
+build/
+*.egg-info/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+
+# TypeScript / Vite
+*.tsbuildinfo
+vite.config.ts.timestamp-*
+
+# Supabase / SQLite
+*.db
+*.sqlite
+
+# Redis dump
+dump.rdb
+
+# Temporary
+/tmp/
+*.tmp
