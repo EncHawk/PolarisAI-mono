@@ -1,13 +1,13 @@
 {
   "rewrites": [
-    { "source": "/auth/:path*", "destination": "https://polaris-backend.onrender.com/auth/:path*" },
-    { "source": "/code/:path*", "destination": "https://polaris-backend.onrender.com/code/:path*" },
-    { "source": "/ingest/:path*", "destination": "https://polaris-backend.onrender.com/ingest/:path*" },
-    { "source": "/billing/:path*", "destination": "https://polaris-backend.onrender.com/billing/:path*" },
-    { "source": "/events/:path*", "destination": "https://polaris-backend.onrender.com/events/:path*" },
-    { "source": "/list/:path*", "destination": "https://polaris-backend.onrender.com/list/:path*" },
-    { "source": "/plan/:path*", "destination": "https://polaris-backend.onrender.com/plan/:path*" },
-    { "source": "/api/:path*", "destination": "https://polaris-backend.onrender.com/api/:path*" },
+    { "source": "/auth/:path*", "destination": "https://polarisai-mono.onrender.com/auth/:path*" },
+    { "source": "/code/:path*", "destination": "https://polarisai-mono.onrender.com/code/:path*" },
+    { "source": "/ingest/:path*", "destination": "https://polarisai-mono.onrender.com/ingest/:path*" },
+    { "source": "/billing/:path*", "destination": "https://polarisai-mono.onrender.com/billing/:path*" },
+    { "source": "/events/:path*", "destination": "https://polarisai-mono.onrender.com/events/:path*" },
+    { "source": "/list/:path*", "destination": "https://polarisai-mono.onrender.com/list/:path*" },
+    { "source": "/plan/:path*", "destination": "https://polarisai-mono.onrender.com/plan/:path*" },
+    { "source": "/api/:path*", "destination": "https://polarisai-mono.onrender.com/api/:path*" },
     { "source": "/(.*)", "destination": "/" }
   ]
 }
