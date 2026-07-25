@@ -1,0 +1,73 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+
+:root {
+  color: #0b1015;
+  background: #ffffff;
+  font-family: 'DM Sans', sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+
+  /* Supermemory palette */
+  --bg: #ffffff;
+  --surface: #ffffff;
+  --surface-alt: #fafafa;
+  --surface-blue: #f4f8ff;
+  --glass: rgba(255, 255, 255, 0.92);
+  --border: rgba(15, 46, 92, 0.1);
+  --border-strong: #c5dbf2;
+
+  --blue: #0562ef;
+  --blue-soft: #7cb7ff;
+  --navy: #0b1015;
+  --navy-deep: #07224f;
+  --amber: #f5a623;
+
+  --p1: var(--blue);
+  --p2: var(--blue);
+  --p3: var(--navy-deep);
+  --p4: #071f4b;
+
+  /* Agent accents */
+  --agent-read: var(--blue);
+  --agent-research: var(--amber);
+  --agent-plan: var(--blue-soft);
+  --agent-code: var(--navy-deep);
+
+  --text: #0b1015;
+  --text2: var(--blue);
+  --text3: rgba(11, 16, 21, 0.6);
+  --text4: #888e94;
+
+  --code-bg: #13191f;
+  --code-text: #faf7f2;
+
+  --sans: 'DM Sans', sans-serif;
+  --display: 'Space Grotesk', sans-serif;
+  --mono: 'DM Mono', monospace;
+
+  --shadow-sm: 0 8px 20px rgba(5, 98, 239, 0.08);
+  --shadow-md: 0 15px 40px rgba(11, 16, 21, 0.08);
+  --shadow-lg: 0 25px 80px rgba(11, 16, 21, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+button, input { font: inherit; }
+
+button, a { -webkit-tap-highlight-color: transparent; }
+
+button { cursor: pointer; }
+
+a { color: inherit; text-decoration: none; }
+
+#root { min-height: 100svh; }

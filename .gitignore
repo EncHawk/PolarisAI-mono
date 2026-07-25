@@ -44,3 +44,9 @@ dump.rdb
 # Temporary
 /tmp/
 *.tmp
+
+# ── Client (Vite + React) ────────────────────────────────────────
+client/node_modules/
+client/dist/
+client/.env
+
