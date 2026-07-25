@@ -23,9 +23,9 @@ def _set_session(response: Response, user_id: str, email: str) -> None:
         key="polaris_session",
         value=token,
         httponly=True,
-        samesite="lax",
+        samesite="none",
         max_age=s.SESSION_TTL_SECONDS,
-        secure=False,
+        secure=True,
         path="/",
     )
 
