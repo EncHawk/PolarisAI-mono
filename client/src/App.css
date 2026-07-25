@@ -16,28 +16,13 @@
 
 .logo-compact { font-size: 17px; }
 
-.logo-mark {
+.logo-img {
   width: 22px;
   height: 22px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(5, 98, 239, 0.35);
-  border-radius: 7px;
-  transform: rotate(45deg);
-  background: rgba(124, 183, 255, 0.15);
-  box-shadow: 0 0 20px rgba(5, 98, 239, 0.14);
+  border-radius: 6px;
 }
 
-.logo-mark span {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--p1);
-  box-shadow: 0 0 10px rgba(5, 98, 239, 0.5);
-}
-
-.logo-compact .logo-mark { width: 19px; height: 19px; border-radius: 6px; }
-.logo-compact .logo-mark span { width: 6px; height: 6px; }
+.logo-compact .logo-img { width: 19px; height: 19px; }
 
 .eyebrow,
 .card-eyebrow {
