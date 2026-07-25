@@ -54,21 +54,14 @@ type IconName = 'arrow' | 'book' | 'check' | 'chevron' | 'clock' | 'code' | 'fil
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
   if (_authToken) headers['authorization'] = 'Bearer ' + _authToken
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 8000)
-  try {
-    const response = await fetch(API_BASE + path, {
-      ...init,
-      credentials: 'include',
-      headers: { ...headers, ...(init?.headers as Record<string, string> | undefined ?? {}) },
-      signal: controller.signal,
-    })
-    const payload = await response.json().catch(() => ({}))
-    if (!response.ok) throw new Error(payload.detail ?? 'Request failed (' + response.status + ')')
-    return payload as T
-  } finally {
-    clearTimeout(timeout)
-  }
+  const response = await fetch(API_BASE + path, {
+    ...init,
+    credentials: 'include',
+    headers: { ...headers, ...(init?.headers as Record<string, string> | undefined ?? {}) },
+  })
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(payload.detail ?? 'Request failed (' + response.status + ')')
+  return payload as T
 }
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
