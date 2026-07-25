@@ -89,7 +89,15 @@ class PaymentWebhookIn(BaseModel):
     provider_reference: str | None = None
 
 
-class StripeCheckoutIn(BaseModel):
+class RazorpayCheckoutIn(BaseModel):
+    plan: Literal["starter", "pro"] = "starter"
+    job_uuid: str | None = None
+
+
+class RazorpayVerifyIn(BaseModel):
+    order_id: str
+    payment_id: str
+    razorpay_signature: str
     plan: Literal["starter", "pro"] = "starter"
     job_uuid: str | None = None
 

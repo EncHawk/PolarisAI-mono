@@ -35,12 +35,9 @@ class Settings(BaseSettings):
     GITHUB_REPO_PRIVATE: bool = False
     PAYMENT_CHECKOUT_URL: str = ""
     BILLING_WEBHOOK_SECRET: str = ""
-    STRIPE_SECRET_KEY: str = ""
-    STRIPE_WEBHOOK_SECRET: str = ""
-    STRIPE_STARTER_PRICE_ID: str = ""
-    STRIPE_PRO_PRICE_ID: str = ""
-    STRIPE_SUCCESS_URL: str = "http://localhost:5173/?checkout=success"
-    STRIPE_CANCEL_URL: str = "http://localhost:5173/?checkout=cancelled"
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
+    RAZORPAY_WEBHOOK_SECRET: str = ""
 
     REDIS_URL: str = "redis://localhost:6379/0"
 

@@ -3,6 +3,7 @@ name = "polaris-shared"
 version = "0.1.0"
 description = "Shared schema + redis key naming for polaris backend and worker"
 requires-python = ">=3.11"
+
 dependencies = [
     "pydantic>=2.7",
 ]
