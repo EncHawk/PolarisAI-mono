@@ -414,7 +414,7 @@ function Workspace({ user, onLogout, onBack }: { user: User; onLogout: () => voi
   const entries = session?.repo_contents ?? result?.repo_contents ?? []
 
   useEffect(() => {
-    if (!import.meta.env.DEV || !result) return undefined
+    if (!import.meta.env.DEV || !result || !_authToken) return undefined
     const events = new EventSource(API_BASE + '/events/' + result.job_uuid, { withCredentials: true })
     events.onmessage = (event) => { try { setTraces((current) => [...current, JSON.parse(event.data) as TraceEvent].slice(-200)) } catch { /* ignore malformed frames */ } }
     events.onerror = () => events.close()

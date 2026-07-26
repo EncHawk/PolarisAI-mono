@@ -13,7 +13,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
-from app.auth.sessions import current_user
+from app.auth.sessions import current_user_optional
 from app.store.redis import get_redis
 from app.store.supabase import get_supabase
 
@@ -49,7 +49,15 @@ def _paper_exists_for_user(job_uuid: str, user_id: str) -> bool:
 
 
 @router.get("/{job_uuid}")
-async def stream_events(job_uuid: str, request: Request, user: dict = Depends(current_user)):
+async def stream_events(job_uuid: str, request: Request, user: dict | None = Depends(current_user_optional)):
+    if not user:
+        async def _unauthorized():
+            yield f"data: {json.dumps({'agent':'SYSTEM','kind':'error','message':'missing session'})}\n\n"
+        return StreamingResponse(
+            _unauthorized(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
     _verify_owner(job_uuid, user["sub"])
     redis = get_redis()
     traces_key = f"polaris:traces:{job_uuid}"
