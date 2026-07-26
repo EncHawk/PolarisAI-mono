@@ -59,9 +59,11 @@ type CheckoutResponse = { order_id: string; amount: number; currency: string; pl
 type IconName = 'arrow' | 'book' | 'check' | 'chevron' | 'clock' | 'code' | 'file' | 'github' | 'google' | 'grid' | 'lock' | 'menu' | 'paperclip' | 'play' | 'plus' | 'search' | 'send' | 'settings' | 'spark' | 'terminal' | 'x'
 
 class ApiError extends Error {
-  constructor(message: string, public status: number) {
+  status: number
+  constructor(message: string, status: number) {
     super(message)
     this.name = 'ApiError'
+    this.status = status
   }
 }
 
@@ -567,12 +569,23 @@ export default function App() {
   const [checkingSession, setCheckingSession] = useState(true)
 
   useEffect(() => {
-    const key = getApiKey()
-    if (!key) { setCheckingSession(false); return }
-    api<User>('/auth/me')
-      .then((current) => { setUser(current); setView('workspace') })
-      .catch(() => { clearApiKey() })
-      .finally(() => setCheckingSession(false))
+    let mounted = true
+    ;(async () => {
+      const key = getApiKey()
+      if (!key) {
+        if (mounted) setCheckingSession(false)
+        return
+      }
+      try {
+        const current = await api<User>('/auth/me')
+        if (mounted) { setUser(current); setView('workspace') }
+      } catch {
+        if (mounted) clearApiKey()
+      } finally {
+        if (mounted) setCheckingSession(false)
+      }
+    })()
+    return () => { mounted = false }
   }, [])
   const openStart = () => { if (user) setView('workspace'); else { setAuthMode('signup'); setAuthOpen(true) } }
   const openSignIn = () => { setAuthMode('login'); setAuthOpen(true) }
