@@ -13,6 +13,8 @@ create table if not exists users (
     github        text,
     username      text,
     x             text,
+    credits       int not null default 3,
+    api_key       text unique,
     created_at    timestamptz default now()
 );
 alter table users add column if not exists name text;
@@ -20,6 +22,8 @@ alter table users add column if not exists password_hash text;
 alter table users add column if not exists github text;
 alter table users add column if not exists username text;
 alter table users add column if not exists x text;
+alter table users add column if not exists credits int not null default 3;
+alter table users add column if not exists api_key text unique;
 
 -- papers: one ingest / job per paper attempt
 create table if not exists papers (

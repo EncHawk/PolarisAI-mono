@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import hmac
 import json
+import time
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from app.redis_keys import redis_keys
 
 from app.auth.sessions import current_user
 from app.config import get_settings
+from app.logging_utils import log_step, POLARIS_LOGGER
 from app.ratelimit import limiter
 from app.schemas import CodeChoiceIn, CodeSessionOut, PaymentWebhookIn
 from app.store.redis import get_redis
@@ -74,7 +76,11 @@ def _out(row: dict) -> CodeSessionOut:
 @router.get("/{job_uuid}", response_model=CodeSessionOut)
 async def get_code_session(job_uuid: str, user: dict = Depends(current_user)):
     """Return the code session. If the repo already exists, includes its contents."""
-    return _out(_verify_owner(job_uuid, user["sub"]))
+    t0 = time.perf_counter()
+    log_step("code.get.start", f"job_uuid={job_uuid} | user={user['sub']}")
+    out = _out(_verify_owner(job_uuid, user["sub"]))
+    log_step("code.get.done", f"job_uuid={job_uuid} | {(time.perf_counter()-t0)*1000:.1f}ms")
+    return out
 
 
 @router.post("/{job_uuid}/choice")
@@ -86,20 +92,28 @@ async def choose_existing_repo(
     user: dict = Depends(current_user),
 ):
     """Existing-repo path: user picks modify (pay to edit) or run (pay to execute)."""
+    t0 = time.perf_counter()
+    log_step("code.choice.start", f"job_uuid={job_uuid} | action={body.action} | user={user['sub']}")
     row = _verify_owner(job_uuid, user["sub"])
     if not row.get("repo_exists"):
         raise HTTPException(status.HTTP_409_CONFLICT, "new repositories do not need a choice")
 
     payment_status = "pending" if get_settings().PAYMENT_CHECKOUT_URL else "unpaid"
+    t1 = time.perf_counter()
     get_supabase().table("code").update({
         "execution_mode": body.action,
         "payment_status": payment_status,
     }).eq("session_id", job_uuid).execute()
+    log_step("code.choice.db", f"job_uuid={job_uuid} | {(time.perf_counter()-t1)*1000:.1f}ms")
+
+    t1 = time.perf_counter()
     get_redis().hset(f"polaris:state:{job_uuid}", mapping={
         "status": "awaiting_payment",
         "execution_mode": body.action,
         "payment_status": payment_status,
     })
+    log_step("code.choice.redis", f"job_uuid={job_uuid} | {(time.perf_counter()-t1)*1000:.1f}ms")
+    log_step("code.choice.done", f"job_uuid={job_uuid} | total={(time.perf_counter()-t0)*1000:.1f}ms")
     return {
         "ok": True,
         "action": body.action,
@@ -118,6 +132,8 @@ async def choose_existing_repo(
 @limiter.limit(get_settings().RATELIMIT_INGEST)
 async def pay_dev(job_uuid: str, request: Request, user: dict = Depends(current_user)):
     """DEV ONLY: mark the session paid without a real payment provider."""
+    t0 = time.perf_counter()
+    log_step("code.paydev.start", f"job_uuid={job_uuid} | user={user['sub']}")
     if not get_settings().is_dev:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not available")
     row = _verify_owner(job_uuid, user["sub"])
@@ -131,6 +147,7 @@ async def pay_dev(job_uuid: str, request: Request, user: dict = Depends(current_
         "execution_mode": mode,
         "status": "paid",
     })
+    log_step("code.paydev.done", f"job_uuid={job_uuid} | mode={mode} | {(time.perf_counter()-t0)*1000:.1f}ms")
     return {"ok": True, "payment_status": "paid", "execution_mode": mode}
 
 
@@ -142,6 +159,8 @@ async def start_code_session(
     user: dict = Depends(current_user),
 ):
     """Enqueue the worker job after payment. New repos use execution_mode=create."""
+    t0 = time.perf_counter()
+    log_step("code.start.start", f"job_uuid={job_uuid} | user={user['sub']}")
     row = _verify_owner(job_uuid, user["sub"])
     if row.get("payment_status") != "paid":
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "payment is required before starting")
@@ -170,6 +189,7 @@ async def start_code_session(
         "progress": "in-progress",
         "execution_mode": mode,
     }).eq("session_id", job_uuid).execute()
+    log_step("code.start.done", f"job_uuid={job_uuid} | mode={mode} | queued | {(time.perf_counter()-t0)*1000:.1f}ms")
     return {"ok": True, "job_uuid": job_uuid, "status": "queued", "execution_mode": mode}
 
 
@@ -180,6 +200,8 @@ async def payment_webhook(
     x_billing_webhook_secret: str | None = Header(default=None),
 ):
     """Minimal provider-neutral payment hook; the payment provider owns checkout."""
+    t0 = time.perf_counter()
+    log_step("code.webhook.start", f"job_uuid={job_uuid}")
     secret = get_settings().BILLING_WEBHOOK_SECRET
     if not secret:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "billing webhook is not configured")
@@ -191,4 +213,5 @@ async def payment_webhook(
         "payment_status": body.status,
     }).eq("session_id", job_uuid).execute()
     get_redis().hset(f"polaris:state:{job_uuid}", "payment_status", body.status)
+    log_step("code.webhook.done", f"job_uuid={job_uuid} | status={body.status} | {(time.perf_counter()-t0)*1000:.1f}ms")
     return {"ok": True, "payment_status": body.status}

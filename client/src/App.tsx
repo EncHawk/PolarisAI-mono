@@ -58,16 +58,45 @@ type Plan = 'starter' | 'pro'
 type CheckoutResponse = { order_id: string; amount: number; currency: string; plan: Plan }
 type IconName = 'arrow' | 'book' | 'check' | 'chevron' | 'clock' | 'code' | 'file' | 'github' | 'google' | 'grid' | 'lock' | 'menu' | 'paperclip' | 'play' | 'plus' | 'search' | 'send' | 'settings' | 'spark' | 'terminal' | 'x'
 
+class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
+function userFacingMessage(err: unknown): string {
+  if (err instanceof ApiError) {
+    if (err.status >= 500) return 'Something went wrong. Please try again in a moment.'
+    if (err.status === 401) return 'Your session has expired. Please sign in again.'
+    if (err.status === 402) return err.message || 'Payment required.'
+    if (err.status === 403) return 'You do not have permission to do that.'
+    if (err.status === 404) return 'Not found.'
+    if (err.status === 429) return 'Too many requests. Please slow down.'
+    if (err.status >= 400) return err.message || 'Please check your input and try again.'
+  }
+  if (err instanceof TypeError && (err as Error).message.includes('fetch')) {
+    return 'Network error. Please check your connection.'
+  }
+  if (err instanceof Error) return err.message
+  return 'Something went wrong. Please try again.'
+}
+
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
   const key = getApiKey()
   if (key) headers['X-API-Key'] = key
-  const response = await fetch(API_BASE + path, {
-    ...init,
-    headers: { ...headers, ...(init?.headers as Record<string, string> | undefined ?? {}) },
-  })
+  let response: Response
+  try {
+    response = await fetch(API_BASE + path, {
+      ...init,
+      headers: { ...headers, ...(init?.headers as Record<string, string> | undefined ?? {}) },
+    })
+  } catch {
+    throw new ApiError('Network error. Please check your connection.', 0)
+  }
   const payload = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(payload.detail ?? 'Request failed (' + response.status + ')')
+  if (!response.ok) throw new ApiError(payload.detail ?? 'Request failed', response.status)
   return payload as T
 }
 
@@ -254,7 +283,7 @@ function AuthModal({ mode, setMode, onClose, onAuth }: { mode: 'login' | 'signup
       const user = await api<User>(mode === 'login' ? '/auth/login' : '/auth/signup', { method: 'POST', body: JSON.stringify(mode === 'login' ? { email, password } : { name, email, password, github: github || null }) })
       onAuth(user)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not authenticate')
+      setError(userFacingMessage(err))
     } finally {
       setBusy(false)
     }
@@ -271,7 +300,7 @@ function AuthModal({ mode, setMode, onClose, onAuth }: { mode: 'login' | 'signup
       return
     }
     googleApi.accounts.id.initialize({ client_id: GOOGLE_CLIENT_ID, callback: async (response) => {
-      try { onAuth(await api<User>('/auth/google', { method: 'POST', body: JSON.stringify({ id_token: response.credential }) })) } catch (err) { setError(err instanceof Error ? err.message : 'Google sign-in failed') }
+      try { onAuth(await api<User>('/auth/google', { method: 'POST', body: JSON.stringify({ id_token: response.credential }) })) } catch (err) { setError(userFacingMessage(err)) }
     } })
     googleApi.accounts.id.prompt()
   }
@@ -435,12 +464,12 @@ function Workspace({ user, onLogout, onBack }: { user: User; onLogout: () => voi
     try {
       const data = await api<IngestResult>('/ingest', { method: 'POST', body: JSON.stringify({ arxiv_url: arxivUrl }) })
       setTraces([]); setResult(data); setSession(await api<CodeSession>('/code/' + data.job_uuid)); setNotice('Paper indexed. Your research agents are standing by.')
-    } catch (err) { setError(err instanceof Error ? err.message : 'Could not start paper session') } finally { setBusy(false) }
+    } catch (err) { setError(userFacingMessage(err)) } finally { setBusy(false) }
   }
   const choose = async (action: 'modify' | 'run') => {
     if (!result) return
     setBusy(true); setError('')
-    try { await api('/code/' + result.job_uuid + '/choice', { method: 'POST', body: JSON.stringify({ action }) }); setNotice('Choice saved. Payment is required before the sandbox can start.'); setSession(await api<CodeSession>('/code/' + result.job_uuid)) } catch (err) { setError(err instanceof Error ? err.message : 'Could not save repository choice') } finally { setBusy(false) }
+      try { await api('/code/' + result.job_uuid + '/choice', { method: 'POST', body: JSON.stringify({ action }) }); setNotice('Choice saved. Payment is required before the sandbox can start.'); setSession(await api<CodeSession>('/code/' + result.job_uuid)) } catch (err) { setError(userFacingMessage(err)) } finally { setBusy(false) }
   }
   const refresh = async () => {
     if (!result) return
@@ -518,13 +547,13 @@ function Workspace({ user, onLogout, onBack }: { user: User; onLogout: () => voi
       setSession(await api<CodeSession>('/code/' + result.job_uuid))
       setNotice('Payment confirmed. Your sandbox is ready.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Payment failed. Please try again.')
+      setError(userFacingMessage(err))
     } finally {
       setBusy(false)
     }
   }
-  const payDev = async () => { if (!result) return; setBusy(true); try { await api('/code/' + result.job_uuid + '/pay-dev', { method: 'POST' }); setSession(await api<CodeSession>('/code/' + result.job_uuid)); setNotice('Development payment bypass applied.') } catch (err) { setError(err instanceof Error ? err.message : 'Could not update payment') } finally { setBusy(false) } }
-  const start = async () => { if (!result) return; setBusy(true); setError(''); try { await api('/code/' + result.job_uuid + '/start', { method: 'POST' }); setNotice('Session queued. Follow the live trace as the agents work.'); setSession(await api<CodeSession>('/code/' + result.job_uuid)) } catch (err) { setError(err instanceof Error ? err.message : 'Could not start paid session') } finally { setBusy(false) } }
+  const payDev = async () => { if (!result) return; setBusy(true); try { await api('/code/' + result.job_uuid + '/pay-dev', { method: 'POST' }); setSession(await api<CodeSession>('/code/' + result.job_uuid)); setNotice('Development payment bypass applied.') } catch (err) { setError(userFacingMessage(err)) } finally { setBusy(false) } }
+  const start = async () => { if (!result) return; setBusy(true); setError(''); try { await api('/code/' + result.job_uuid + '/start', { method: 'POST' }); setNotice('Session queued. Follow the live trace as the agents work.'); setSession(await api<CodeSession>('/code/' + result.job_uuid)) } catch (err) { setError(userFacingMessage(err)) } finally { setBusy(false) } }
   const sendChat = (event: FormEvent) => { event.preventDefault(); if (!chat.trim()) return; const text = chat.trim(); setMessages((current) => [...current, { from: 'user', text }, { from: 'agent', text: 'Got it. I’ll keep that constraint in view as the plan takes shape.' }]); setChat('') }
 
   return <div className="workspace-shell"><aside className={'workspace-sidebar ' + (mobileNav ? 'mobile-open' : '')}><div className="workspace-sidebar-top"><Logo /><button className="icon-button sidebar-close" onClick={() => setMobileNav(false)} aria-label="Close navigation"><Icon name="x" size={18} /></button></div><button className="new-session" onClick={() => { setResult(null); setSession(null); setArxivUrl(''); setMobileNav(false) }}><span><Icon name="plus" size={16} /></span> New paper session <kbd>⌘ K</kbd></button><div className="sidebar-section"><span className="sidebar-label">WORKSPACE</span><button className="sidebar-link active"><Icon name="spark" size={16} /> Research cockpit</button><button className="sidebar-link"><Icon name="book" size={16} /> My papers <span className="sidebar-count">3</span></button><button className="sidebar-link"><Icon name="clock" size={16} /> Activity</button></div><div className="sidebar-section sidebar-recent"><span className="sidebar-label">RECENT SESSIONS</span><button className="recent-paper"><span className="paper-status teal" /><span><b>Scaling Laws for Neural...</b><small>Today · CODE</small></span></button><button className="recent-paper"><span className="paper-status amber" /><span><b>Attention Is All You Need</b><small>Yesterday · PLAN</small></span></button><button className="recent-paper"><span className="paper-status blue" /><span><b>Diffusion Models</b><small>Jun 18 · READ</small></span></button></div><div className="sidebar-bottom"><button className="sidebar-link"><Icon name="settings" size={16} /> Settings</button><button className="profile-button" onClick={onLogout}><span className="profile-avatar">{displayName.slice(0, 1).toUpperCase()}</span><span><b>{displayName}</b><small>Personal workspace</small></span><Icon name="chevron" size={14} /></button></div></aside><div className="workspace-main"><header className="workspace-header"><button className="icon-button mobile-menu" onClick={() => setMobileNav(true)} aria-label="Open navigation"><Icon name="menu" size={20} /></button><div className="breadcrumbs"><button onClick={onBack}>Polaris</button><Icon name="chevron" size={13} /><span>Research cockpit</span></div><div className="workspace-header-actions"><span className="secure-label"><span className="live-dot" /> Secure workspace</span><button className="icon-button"><Icon name="search" size={18} /></button><button className="avatar-button" onClick={onLogout}>{displayName.slice(0, 1).toUpperCase()}</button></div></header><main className="cockpit-content"><div className="cockpit-heading"><div><p className="eyebrow">{result ? 'ACTIVE PAPER SESSION' : 'MONDAY, JUNE 23 · YOUR RESEARCH COCKPIT'}</p><h1>{result ? result.repo_name.replaceAll('-', ' ') : <>Good to see you, <em>{displayName}.</em></>}</h1><p>{result ? 'Your agents are turning this paper into a result you can run.' : 'One clear place for every paper you’re trying to understand.'}</p></div><div className="heading-actions"><button className="ghost-button" onClick={onLogout}>Sign out</button><button className="primary-button" onClick={() => document.getElementById('paper-input')?.focus()}><Icon name="plus" size={16} /> New session</button></div></div><div className="cockpit-grid"><section className="conversation-card panel-card"><div className="card-header"><div><span className="card-eyebrow"><span className="live-dot" /> PAPER INTAKE</span><h2>What are we looking at?</h2></div><span className="shortcut-chip">⌘ ↵</span></div>{!result ? <><p className="card-copy">Paste an arXiv URL and Polaris will read the paper, trace its evidence, then sketch a build plan.</p><form className="paper-input-form" onSubmit={ingest}><div className="input-leading"><Icon name="paperclip" size={18} /><input id="paper-input" value={arxivUrl} onChange={(event) => setArxivUrl(event.target.value)} placeholder="Paste an arXiv link or paper URL…" aria-label="Paper URL" /><button type="button" className="input-clear" onClick={() => setArxivUrl('')}><Icon name="x" size={15} /></button></div><button className="primary-button" disabled={busy || !arxivUrl.trim()}>{busy ? 'Indexing…' : 'Start reading'} <Icon name="arrow" size={15} /></button></form><div className="suggestion-row"><span>Try a classic</span><button onClick={() => setArxivUrl('https://arxiv.org/pdf/1706.03762')}>Attention Is All You Need</button><button onClick={() => setArxivUrl('https://arxiv.org/pdf/2006.11239')}>Diffusion Models</button></div></> : <div className="active-paper-summary"><div className="active-paper-icon"><Icon name="book" size={21} /></div><div><b>{result.arxiv_id ? 'arXiv:' + result.arxiv_id : result.repo_name}</b><p>Agents are working through your paper now.</p></div><span className="status-dot-label"><span className="live-dot" /> {session?.progress ?? 'in-progress'}</span></div>}{error && <p className="form-error workspace-error">{error}</p>}{notice && <p className="workspace-notice"><Icon name="check" size={14} /> {notice}</p>}<div className="mini-pipeline"><AgentPipeline active={activeIndex} /></div></section><section className="chat-card panel-card"><div className="card-header"><div><span className="card-eyebrow">POLARIS AGENT</span><h2>Ask while it works.</h2></div><span className="agent-online"><span className="live-dot" /> online</span></div><div className="chat-messages">{messages.slice(-3).map((message, index) => <div className={'chat-message ' + message.from} key={index}>{message.from === 'agent' && <span className="chat-avatar"><Icon name="spark" size={13} /></span>}<p>{message.text}</p></div>)}</div><form className="chat-form" onSubmit={sendChat}><input value={chat} onChange={(event) => setChat(event.target.value)} placeholder="Ask about this paper…" aria-label="Ask Polaris" /><button className="send-button" aria-label="Send message"><Icon name="send" size={16} /></button></form></section><section className="pipeline-card panel-card"><div className="card-header"><div><span className="card-eyebrow">THE RESEARCH LOOP</span><h2>Every step, visible.</h2></div><span className="progress-label">{result ? '1 of 4 active' : 'Ready to begin'}</span></div><div className="workspace-agent-list">{agentData.map((agent, index) => <div className={'workspace-agent ' + agent.color + (index === activeIndex ? ' active' : '')} key={agent.key}><span className="workspace-agent-icon"><Icon name={agent.icon} size={16} /></span><div><b>{agent.label}</b><span>{index < activeIndex ? 'Complete' : index === activeIndex ? 'Working now' : 'Waiting'}</span></div><span className="workspace-agent-status">{index < activeIndex ? <Icon name="check" size={14} /> : index === activeIndex ? <i className="pulse-ring" /> : '—'}</span></div>)}</div></section><section className="files-card panel-card"><div className="card-header"><div><span className="card-eyebrow">SANDBOX FILES</span><h2>{entries.length ? 'Your implementation' : 'Files will appear here.'}</h2></div><button className="icon-button"><Icon name="file" size={17} /></button></div>{entries.length ? <div className="file-list">{entries.slice(0, 5).map((entry) => <div className="file-row" key={entry.path}><Icon name={entry.type === 'dir' ? 'grid' : 'file'} size={15} /><span>{entry.path}</span>{entry.html_url && <a href={entry.html_url} target="_blank" rel="noreferrer">view</a>}</div>)}</div> : <div className="empty-files"><span className="empty-file-icon"><Icon name="code" size={20} /></span><p>Start a paper session and your sandbox will take shape here.</p></div>}</section><section className="terminal-card panel-card"><Terminal traces={traces} isRunning={!!result && session?.progress !== 'completed'} /></section></div>{result && <section className="session-actions panel-card"><div><span className="card-eyebrow">SESSION CONTROL</span><h2>Ready for your call.</h2><p>{result.repo_exists ? 'This paper already has a repository. Choose how you want to continue.' : 'Your paper is indexed. Review the next move before the sandbox starts.'}</p></div><div className="session-action-buttons">{result.repo_exists && <><button className="secondary-button" disabled={busy} onClick={() => choose('modify')}>Modify repository</button><button className="secondary-button" disabled={busy} onClick={() => choose('run')}>Run existing code</button></>}{session?.payment_status !== 'paid' && <><button className="primary-button" onClick={refresh} disabled={busy}>{busy ? 'Opening Razorpay…' : 'Pay now'} <Icon name="arrow" size={15} /></button>{import.meta.env.DEV && <button className="ghost-button" onClick={payDev} disabled={busy}>Dev: mark paid</button>}</>}{session?.payment_status === 'paid' && <button className="primary-button" onClick={start} disabled={busy}>Start sandbox <Icon name="play" size={14} /></button>}</div></section>}</main><footer className="workspace-footer"><span><Logo compact /></span><span>Research deserves a paper trail.</span><span>polaris AI · early access</span></footer></div></div>

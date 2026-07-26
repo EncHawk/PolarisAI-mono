@@ -1,10 +1,11 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import get_settings
+from app.logging_utils import log_request_end, log_request_start, POLARIS_LOGGER
 from app.ratelimit import limiter
 
 
@@ -23,6 +24,20 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def _log_requests(request: Request, call_next):
+        """Log every request with method, path, client, timing and full traceback on error."""
+        t0 = log_request_start(request)
+        response = None
+        try:
+            response = await call_next(request)
+            log_request_end(request, response.status_code, t0)
+            return response
+        except Exception as exc:
+            status = 500
+            log_request_end(request, status, t0, error=exc)
+            raise
 
     # routers
     from app.auth.routes import router as auth_router
@@ -43,9 +58,19 @@ def create_app() -> FastAPI:
     app.include_router(list_router)
     app.include_router(plan_router)
 
+    @app.exception_handler(HTTPException)
+    async def _http_exception(req: Request, exc: HTTPException):
+        """Pass through user-facing HTTPExceptions with their original detail."""
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
     @app.exception_handler(Exception)
     async def _internal(req: Request, exc: Exception):
-        return JSONResponse(status_code=500, content={"detail": str(exc)})
+        """Catch-all for unexpected server errors. Never leak internal details to the client."""
+        POLARIS_LOGGER.exception("Unhandled server error for %s %s", req.method, req.url)
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "Something went wrong. Please try again in a moment."},
+        )
 
     return app
 

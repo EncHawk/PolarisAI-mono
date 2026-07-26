@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
 from app.auth.sessions import current_user
 from app.config import get_settings
+from app.logging_utils import log_step, POLARIS_LOGGER
 from app.schemas import RazorpayCheckoutIn, RazorpayVerifyIn
 from app.store.redis import get_redis
 from app.store.supabase import get_supabase
@@ -65,6 +66,8 @@ async def create_order(
     user: dict = Depends(current_user),
 ):
     """Create a Razorpay order for a Polaris plan and return order_id + amount."""
+    t0 = time.perf_counter()
+    log_step("billing.checkout.start", f"plan={body.plan} | user={user['sub']} | job={body.job_uuid}")
     client = _razorpay()
     plan = PLAN_COPY[body.plan]
     _owned_job(body.job_uuid, user["sub"])
@@ -75,6 +78,7 @@ async def create_order(
 
     receipt = f"polaris_{user['sub']}_{int(time.time())}"
 
+    t1 = time.perf_counter()
     order = client.order.create(
         {
             "amount": amount_paise,
@@ -93,7 +97,8 @@ async def create_order(
             },
         }
     )
-
+    log_step("billing.checkout.razorpay", f"order_id={order['id']} | {(time.perf_counter()-t1)*1000:.1f}ms")
+    log_step("billing.checkout.done", f"total={(time.perf_counter()-t0)*1000:.1f}ms")
     return {
         "order_id": order["id"],
         "amount": order["amount"],
@@ -108,6 +113,8 @@ async def verify_payment(
     user: dict = Depends(current_user),
 ):
     """Verify the Razorpay signature after the frontend receives payment details."""
+    t0 = time.perf_counter()
+    log_step("billing.verify.start", f"order={body.order_id} | job={body.job_uuid} | user={user['sub']}")
     settings = get_settings()
     if not settings.RAZORPAY_KEY_SECRET:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Razorpay is not configured")
@@ -121,23 +128,29 @@ async def verify_payment(
     ).hexdigest()
 
     if not hmac.compare_digest(expected_sig, body.razorpay_signature):
+        POLARIS_LOGGER.warning("billing.verify.sig_mismatch | order=%s | user=%s | %.1fms", body.order_id, user["sub"], (time.perf_counter()-t0)*1000)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "signature mismatch")
 
     # Mark the code session as paid
     job_uuid = body.job_uuid
     if job_uuid:
+        t1 = time.perf_counter()
         get_supabase().table("code").update({"payment_status": "paid"}).eq("session_id", job_uuid).execute()
         get_redis().hset(
             f"polaris:state:{job_uuid}",
             mapping={"payment_status": "paid", "razorpay_order_id": body.order_id, "razorpay_payment_id": body.payment_id},
         )
+        log_step("billing.verify.db", f"job={job_uuid} | {(time.perf_counter()-t1)*1000:.1f}ms")
 
+    log_step("billing.verify.done", f"total={(time.perf_counter()-t0)*1000:.1f}ms")
     return {"status": "ok", "plan": body.plan}
 
 
 @router.post("/razorpay/webhook")
 async def razorpay_webhook(request: Request, x_razorpay_signature: str | None = Header(default=None, alias="X-Razorpay-Signature")):
     """Verify Razorpay webhook events and mark the linked code session as paid."""
+    t0 = time.perf_counter()
+    log_step("billing.webhook.start", f"razorpay_sig_present={bool(x_razorpay_signature)}")
     settings = get_settings()
     if not settings.RAZORPAY_WEBHOOK_SECRET:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Razorpay webhook secret is not configured")
@@ -151,12 +164,14 @@ async def razorpay_webhook(request: Request, x_razorpay_signature: str | None = 
         hashlib.sha256,
     ).hexdigest()
     if not hmac.compare_digest(expected_sig, x_razorpay_signature or ""):
+        POLARIS_LOGGER.warning("billing.webhook.sig_mismatch | %.1fms", (time.perf_counter()-t0)*1000)
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid Razorpay webhook signature")
 
     import json
 
     event = json.loads(payload)
     event_type = event.get("event", "")
+    log_step("billing.webhook.event", f"type={event_type}")
 
     # Payment succeeded
     if event_type in {"payment.captured", "order.paid"}:
@@ -166,7 +181,10 @@ async def razorpay_webhook(request: Request, x_razorpay_signature: str | None = 
         job_uuid = notes.get("job_uuid")
 
         if job_uuid:
+            t1 = time.perf_counter()
             get_supabase().table("code").update({"payment_status": "paid"}).eq("session_id", job_uuid).execute()
             get_redis().hset(f"polaris:state:{job_uuid}", mapping={"payment_status": "paid"})
+            log_step("billing.webhook.db", f"job={job_uuid} | {(time.perf_counter()-t1)*1000:.1f}ms")
 
+    log_step("billing.webhook.done", f"total={(time.perf_counter()-t0)*1000:.1f}ms")
     return {"received": True}

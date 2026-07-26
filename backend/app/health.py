@@ -1,10 +1,13 @@
 """Health + dependency probes (redis / supabase / github)."""
 from __future__ import annotations
 
+import time
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
+from app.logging_utils import log_step, POLARIS_LOGGER
 from app.store.redis import get_redis
 from app.store.supabase import get_supabase
 
@@ -19,6 +22,7 @@ async def health():
 @router.get("/api/ready")
 async def ready():
     """Deep readiness check for redis, supabase, and the GitHub org."""
+    t0 = time.perf_counter()
     s = get_settings()
     out: dict = {"ok": True, "redis": False, "supabase": False, "github": False, "details": {}}
 
@@ -28,6 +32,7 @@ async def ready():
     except Exception as e:
         out["ok"] = False
         out["details"]["redis"] = str(e)
+        POLARIS_LOGGER.error("health.redis.fail | %s", e)
 
     try:
         db = get_supabase()
@@ -37,6 +42,7 @@ async def ready():
     except Exception as e:
         out["ok"] = False
         out["details"]["supabase"] = str(e)
+        POLARIS_LOGGER.error("health.supabase.fail | %s", e)
 
     try:
         from app.github import GitHubClient
@@ -63,7 +69,9 @@ async def ready():
     except Exception as e:
         out["ok"] = False
         out["details"]["github"] = str(e)
+        POLARIS_LOGGER.error("health.github.fail | %s", e)
 
     out["details"]["github_token_configured"] = bool(s.GITHUB_ACCESS_TOKEN)
     out["details"]["supabase_url"] = s.SUPABASE_URL or "(empty -> in-memory stub)"
+    log_step("health.ready", f"ok={out['ok']} | redis={out['redis']} | supabase={out['supabase']} | github={out['github']} | {(time.perf_counter()-t0)*1000:.1f}ms")
     return JSONResponse(status_code=200 if out["ok"] else 503, content=out)

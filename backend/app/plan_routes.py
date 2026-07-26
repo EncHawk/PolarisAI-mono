@@ -7,11 +7,13 @@ rejects with feedback) here.
 from __future__ import annotations
 
 import json
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.auth.sessions import current_user
 from app.config import get_settings
+from app.logging_utils import log_step
 from app.ratelimit import limiter
 from app.schemas import PlanFeedbackIn
 from app.store.redis import get_redis
@@ -49,8 +51,11 @@ def _verify_owner(job_uuid: str, user_id: str) -> None:
 async def approve_plan(
     job_uuid: str, body: PlanFeedbackIn, request: Request, user: dict = Depends(current_user)
 ):
+    t0 = time.perf_counter()
+    log_step("plan.approve.start", f"job={job_uuid} | user={user['sub']} | approved={body.approved}")
     _verify_owner(job_uuid, user["sub"])
     redis = get_redis()
     payload = json.dumps({"approved": body.approved, "feedback": body.feedback})
     redis.rpush(f"polaris:plan_confirm:{job_uuid}", payload)
+    log_step("plan.approve.done", f"job={job_uuid} | {(time.perf_counter()-t0)*1000:.1f}ms")
     return {"ok": True}
