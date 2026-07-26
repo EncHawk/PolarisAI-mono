@@ -6,14 +6,21 @@ import './App.css'
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
 
-let _authToken: string | null = null
+const API_KEY_STORAGE = 'polaris_api_key'
 
-function _getCookie(name: string): string | null {
-  const match = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '=([^;]*)'))
-  return match ? decodeURIComponent(match[1]) : null
+function getApiKey(): string | null {
+  return localStorage.getItem(API_KEY_STORAGE)
 }
 
-type User = { id?: string; user_id?: string; email: string; name?: string | null; username?: string | null }
+function setApiKey(key: string): void {
+  localStorage.setItem(API_KEY_STORAGE, key)
+}
+
+function clearApiKey(): void {
+  localStorage.removeItem(API_KEY_STORAGE)
+}
+
+type User = { id?: string; user_id?: string; email: string; name?: string | null; username?: string | null; api_key?: string }
 type RepoEntry = { name: string; path: string; type: string; html_url?: string }
 type IngestResult = {
   job_uuid: string
@@ -53,10 +60,10 @@ type IconName = 'arrow' | 'book' | 'check' | 'chevron' | 'clock' | 'code' | 'fil
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = { 'content-type': 'application/json' }
-  if (_authToken) headers['authorization'] = 'Bearer ' + _authToken
+  const key = getApiKey()
+  if (key) headers['X-API-Key'] = key
   const response = await fetch(API_BASE + path, {
     ...init,
-    credentials: 'include',
     headers: { ...headers, ...(init?.headers as Record<string, string> | undefined ?? {}) },
   })
   const payload = await response.json().catch(() => ({}))
@@ -414,8 +421,9 @@ function Workspace({ user, onLogout, onBack }: { user: User; onLogout: () => voi
   const entries = session?.repo_contents ?? result?.repo_contents ?? []
 
   useEffect(() => {
-    if (!import.meta.env.DEV || !result || !_authToken) return undefined
-    const events = new EventSource(API_BASE + '/events/' + result.job_uuid, { withCredentials: true })
+    const key = getApiKey()
+    if (!import.meta.env.DEV || !result || !key) return undefined
+    const events = new EventSource(API_BASE + '/events/' + result.job_uuid + '?api_key=' + encodeURIComponent(key), { withCredentials: true })
     events.onmessage = (event) => { try { setTraces((current) => [...current, JSON.parse(event.data) as TraceEvent].slice(-200)) } catch { /* ignore malformed frames */ } }
     events.onerror = () => events.close()
     return () => events.close()
@@ -530,18 +538,17 @@ export default function App() {
   const [checkingSession, setCheckingSession] = useState(true)
 
   useEffect(() => {
-    const token = _getCookie('polaris_session')
-    if (!token) { setCheckingSession(false); return }
-    _authToken = token
+    const key = getApiKey()
+    if (!key) { setCheckingSession(false); return }
     api<User>('/auth/me')
       .then((current) => { setUser(current); setView('workspace') })
-      .catch(() => { _authToken = null })
+      .catch(() => { clearApiKey() })
       .finally(() => setCheckingSession(false))
   }, [])
   const openStart = () => { if (user) setView('workspace'); else { setAuthMode('signup'); setAuthOpen(true) } }
   const openSignIn = () => { setAuthMode('login'); setAuthOpen(true) }
-  const authenticated = (current: User) => { _authToken = _getCookie('polaris_session'); setUser(current); setAuthOpen(false); setView('workspace') }
-  const logout = async () => { try { await api('/auth/logout', { method: 'POST' }) } catch { /* local state still resets */ } _authToken = null; setUser(null); setView('landing') }
+  const authenticated = (current: User) => { if (current.api_key) setApiKey(current.api_key); setUser(current); setAuthOpen(false); setView('workspace') }
+  const logout = async () => { try { await api('/auth/logout', { method: 'POST' }) } catch { /* local state still resets */ } clearApiKey(); setUser(null); setView('landing') }
 
   if (checkingSession) return <div className="boot-screen"><Logo /><span className="boot-line" /></div>
   return <>{user && view === 'workspace' ? <Workspace user={user} onLogout={logout} onBack={() => setView('landing')} /> : <Landing onStart={openStart} onSignIn={openSignIn} />}{authOpen && <AuthModal mode={authMode} setMode={setAuthMode} onClose={() => setAuthOpen(false)} onAuth={authenticated} />}</>

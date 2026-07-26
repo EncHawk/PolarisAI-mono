@@ -1,6 +1,6 @@
 """SSE stream of worker trace events for a job_uuid.
 
-- Uses the reds list `polaris:traces:{uuid}` as a durable replay log.
+- Uses the redis list `polaris:traces:{uuid}` as a durable replay log.
 - Also subscribes to `polaris:traces:{uuid}:pub` pub/sub for live tailing.
 - Streams `data: {json}\n\n` frames with periodic comment heartbeats.
 - Closes when the job reaches a terminal state (done/failed).
@@ -13,7 +13,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
-from app.auth.sessions import current_user_optional
+from app.auth.sessions import current_user_sse
 from app.store.redis import get_redis
 from app.store.supabase import get_supabase
 
@@ -49,15 +49,11 @@ def _paper_exists_for_user(job_uuid: str, user_id: str) -> bool:
 
 
 @router.get("/{job_uuid}")
-async def stream_events(job_uuid: str, request: Request, user: dict | None = Depends(current_user_optional)):
-    if not user:
-        async def _unauthorized():
-            yield f"data: {json.dumps({'agent':'SYSTEM','kind':'error','message':'missing session'})}\n\n"
-        return StreamingResponse(
-            _unauthorized(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
+async def stream_events(
+    job_uuid: str,
+    request: Request,
+    user: dict = Depends(current_user_sse),
+):
     _verify_owner(job_uuid, user["sub"])
     redis = get_redis()
     traces_key = f"polaris:traces:{job_uuid}"

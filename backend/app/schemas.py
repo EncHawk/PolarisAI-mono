@@ -26,6 +26,7 @@ class AuthOut(BaseModel):
     username: str | None = None
     github: str | None = None
     x: str | None = None
+    api_key: str
 
 
 class UserOut(BaseModel):

@@ -6,7 +6,7 @@ import uuid as _u
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from app.redis_keys import redis_keys
 
-from app.auth.sessions import current_user
+from app.auth.sessions import current_user, require_credits
 from app.config import get_settings
 from app.github import GitHubClient, GitHubUnavailable
 from app.ingest import arxiv
@@ -28,6 +28,7 @@ def _repo_name(arxiv_id: str) -> str:
 @router.post("", response_model=IngestOut)
 @limiter.limit(get_settings().RATELIMIT_INGEST)
 async def ingest(body: IngestIn, request: Request, user: dict = Depends(current_user)):
+    require_credits(user, cost=1)
     try:
         ref = arxiv.resolve(body.arxiv_id, body.arxiv_url, body.pdf_url)
     except ValueError as e:

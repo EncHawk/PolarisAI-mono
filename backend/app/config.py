@@ -79,7 +79,6 @@ class Settings(BaseSettings):
                 name for name, value in {
                     "GOOGLE_CLIENT_ID": self.GOOGLE_CLIENT_ID,
                     "GOOGLE_CLIENT_SECRET": self.GOOGLE_CLIENT_SECRET,
-                    "JWT_SECRET": self.JWT_SECRET,
                     "GITHUB_ACCESS_TOKEN": self.GITHUB_ACCESS_TOKEN,
                 }.items() if not value or value == "dev-only-change-me"]
             if missing:
