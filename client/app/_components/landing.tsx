@@ -531,7 +531,15 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
     setEmail(signedInEmail)
   }, [])
 
-  const { status, error, hint, signIn, retry, dismiss } = useGoogleSignIn(onSignedIn)
+  // useGoogleSignIn manages the full Google sign-in lifecycle:
+  //   1. signIn()     — opens the Google One Tap prompt OR shows the modal with
+  //                     a rendered Google Sign-In button (if popup is blocked).
+  //   2. status       — 'idle' | 'loading' | 'verifying' | 'error'
+  //   3. renderButtonIn(container) — renders a Google Sign-In button into the
+  //                     given DOM element (used by the SignInOverlay modal).
+  //   4. hasStoredId  — true if a previous id_token exists in localStorage,
+  //                     indicating a returning user.
+  const { status, error, hint, signIn, retry, dismiss, renderButtonIn, hasStoredId } = useGoogleSignIn(onSignedIn)
 
   const onSignOut = useCallback(async () => {
     try {
@@ -561,7 +569,7 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
       {showThanks && <ThanksToast />}
       <Header authed={authedState} email={emailState} name={nameState} onSignIn={signIn} />
       <ScrollLine />
-      <SignInOverlay status={status} error={error} hint={hint} onRetry={retry} onDismiss={dismiss} />
+      <SignInOverlay status={status} error={error} hint={hint} onRetry={retry} onDismiss={dismiss} buttonRef={renderButtonIn} />
 
       <section
         className="relative z-10 flex min-h-screen flex-col items-start justify-center px-6 pt-28 pb-20"
@@ -581,6 +589,14 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
               every paper you open becomes something you can run.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3 sm:gap-4">
+              {/*
+               * Get Started — two modes:
+               * 1. Not signed in (authedState=false) → button calls signIn() which:
+               *    a. Opens the SignInOverlay modal with a Google Sign-In button
+               *    b. Also fires Google One Tap (popup) as a faster path
+               *    c. On success, stores id_token in localStorage and sets authedState=true
+               * 2. Signed in (authedState=true) → link directly to /code workspace
+               */}
               {!authedState ? (
                 <SectionCTA onClick={signIn} type="button">Get started</SectionCTA>
               ) : (

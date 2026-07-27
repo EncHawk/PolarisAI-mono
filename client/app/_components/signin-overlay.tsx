@@ -11,12 +11,14 @@ export function SignInOverlay({
   hint,
   onRetry,
   onDismiss,
+  buttonRef,
 }: {
   status: SignInStatus
   error: string
   hint: string
   onRetry: () => void
   onDismiss: () => void
+  buttonRef?: (el: HTMLDivElement) => void
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -47,28 +49,27 @@ export function SignInOverlay({
           onClick={(e) => e.stopPropagation()}
           role="dialog"
           aria-modal="true"
-          aria-label="Signing in to Polaris"
+          aria-label="Sign in to Polaris"
         >
           {(status === 'loading' || status === 'verifying') && (
             <div className="flex flex-col items-center text-center">
-              <div className="polaris-spinner" role="status" aria-live="polite" />
-              <h2 className="mt-6 font-display text-xl font-medium tracking-tight text-text">
-                {status === 'loading' ? 'Connecting to Google…' : 'Signing you in'}
-              </h2>
-              <motion.p
-                key={hint}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.25 }}
-                className="mt-2 font-mono text-[12px] tracking-wide text-blue"
-              >
-                {hint}
-              </motion.p>
-              <p className="mt-5 max-w-[34ch] text-xs leading-relaxed text-text4">
-                {status === 'loading'
-                  ? 'Opening the Google account picker…'
-                  : 'Hang tight — this usually takes a second.'}
-              </p>
+              {/* Google Sign-In button is rendered into this container */}
+              <div ref={(el) => { if (el && buttonRef && status === 'loading') buttonRef(el) }} className="mt-2 min-h-[50px]" />
+              {status === 'verifying' && (
+                <>
+                  <div className="polaris-spinner mt-6" role="status" aria-live="polite" />
+                  <h2 className="mt-4 font-display text-xl font-medium tracking-tight text-text">Signing you in</h2>
+                  <motion.p
+                    key={hint}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25 }}
+                    className="mt-2 font-mono text-[12px] tracking-wide text-blue"
+                  >
+                    {hint}
+                  </motion.p>
+                </>
+              )}
             </div>
           )}
 

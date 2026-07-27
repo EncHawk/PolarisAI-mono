@@ -68,6 +68,14 @@ export function useGoogleSignIn(onSignedIn: (email: string) => void) {
   const [error, setError] = useState('')
   const [hint, setHint] = useState('Verifying your Google account…')
 
+  // Store the last id_token so we can check if this is a returning user
+  const storeIdToken = useCallback((token: string) => {
+    try { localStorage.setItem('polaris_id_token', token) } catch {}
+  }, [])
+
+  // Check if we have a stored id_token — means user has signed in before
+  const hasStoredId = typeof window !== 'undefined' && !!localStorage.getItem('polaris_id_token')
+
   const onSignedInRef = useRef(onSignedIn)
   onSignedInRef.current = onSignedIn
 
@@ -78,6 +86,8 @@ export function useGoogleSignIn(onSignedIn: (email: string) => void) {
       setError('Google did not return a credential. Try again.')
       return
     }
+    // Store id_token locally to flag returning users
+    storeIdToken(idToken)
     setStatus('verifying')
     setHint('Verifying your Google account…')
     try {
@@ -100,9 +110,22 @@ export function useGoogleSignIn(onSignedIn: (email: string) => void) {
       setStatus('error')
       setError('Could not reach the Polaris API. Check your connection and try again.')
     }
-  }, [])
+  }, [storeIdToken])
 
   const readyRef = useRef(false)
+  const buttonContainerRef = useRef<HTMLDivElement | null>(null)
+  const renderButtonIn = useCallback((container: HTMLDivElement) => {
+    buttonContainerRef.current = container
+    if (!window.google?.accounts?.id || !clientId) return
+    window.google.accounts.id.renderButton(container, {
+      type: 'standard',
+      size: 'large',
+      text: 'signin_with',
+      shape: 'rectangular',
+      width: container.offsetWidth || 280,
+    })
+  }, [clientId])
+
   useEffect(() => {
     if (!clientId) return
     let cancelled = false
@@ -113,6 +136,16 @@ export function useGoogleSignIn(onSignedIn: (email: string) => void) {
         client_id: clientId,
         callback: gisCallback,
       })
+      // If modal is already open with a container, render the button
+      if (buttonContainerRef.current) {
+        window.google.accounts.id.renderButton(buttonContainerRef.current, {
+          type: 'standard',
+          size: 'large',
+          text: 'signin_with',
+          shape: 'rectangular',
+          width: buttonContainerRef.current.offsetWidth || 280,
+        })
+      }
     }
     if (window.google?.accounts?.id) init()
     else loadGoogleIdentity().then(init)
@@ -176,7 +209,7 @@ export function useGoogleSignIn(onSignedIn: (email: string) => void) {
       return
     }
     doPrompt()
-  }, [])
+  }, [clientId])
 
   const statusRef = useRef(status)
   statusRef.current = status
@@ -192,7 +225,7 @@ export function useGoogleSignIn(onSignedIn: (email: string) => void) {
     setError('')
   }, [])
 
-  return { status, error, hint, signIn, retry, dismiss }
+  return { status, error, hint, signIn, retry, dismiss, renderButtonIn, hasStoredId }
 }
 
 export type { SignInStatus }
