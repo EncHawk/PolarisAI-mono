@@ -8,30 +8,47 @@ import { BACKEND_URL, SESSION_COOKIE } from '@/lib/api'
 // named `polaris_session` (the cookie the backend already accepts). JS never
 // reads it.
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}))
-  const id_token = body?.id_token
-  if (!id_token) return NextResponse.json({ detail: 'missing id_token' }, { status: 400 })
-
-  const r = await fetch(`${BACKEND_URL}/auth/exchange`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id_token }),
-  })
-  if (!r.ok) {
-    const detail = await r.json().catch(() => ({ detail: 'exchange failed' }))
-    return NextResponse.json(detail, { status: r.status })
+  let body: Record<string, unknown> = {}
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ detail: 'invalid json body' }, { status: 400 })
   }
-  const out = (await r.json()) as { api_key: string; email: string }
 
-  const secure = process.env.NODE_ENV === 'production'
-  ;(await cookies()).set({
-    name: SESSION_COOKIE,
-    value: out.api_key,
-    httpOnly: true,
-    sameSite: 'lax',
-    secure,
-    path: '/',
-    maxAge: 60 * 60 * 24 * 30,
-  })
-  return NextResponse.json({ ok: true, email: out.email })
+  const id_token = body?.id_token
+  if (!id_token || typeof id_token !== 'string') {
+    return NextResponse.json({ detail: 'missing id_token' }, { status: 400 })
+  }
+
+  const exchangeUrl = `${BACKEND_URL}/auth/exchange`
+  try {
+    const r = await fetch(exchangeUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id_token }),
+    })
+    if (!r.ok) {
+      const detail = await r.json().catch(() => ({ detail: 'exchange failed' }))
+      return NextResponse.json(detail, { status: r.status })
+    }
+    const out = (await r.json()) as { api_key: string; email: string }
+
+    const secure = process.env.NODE_ENV === 'production'
+    ;(await cookies()).set({
+      name: SESSION_COOKIE,
+      value: out.api_key,
+      httpOnly: true,
+      sameSite: 'lax',
+      secure,
+      path: '/',
+      maxAge: 60 * 60 * 24 * 30,
+    })
+    return NextResponse.json({ ok: true, email: out.email })
+  } catch (err) {
+    console.error('[callback] exchange fetch error:', err)
+    return NextResponse.json(
+      { detail: 'polaris callback failed: ' + ((err as Error)?.message || 'unknown') },
+      { status: 502 }
+    )
+  }
 }
