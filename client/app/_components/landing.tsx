@@ -891,7 +891,6 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
             <div className="mt-10 flex flex-wrap items-center gap-4">
               {!authedState ? (
                 <div className="flex items-center gap-4">
-                  <SectionCTA href="#pricing" primary={false}>See pricing</SectionCTA>
                   <button
                     type="button"
                     onClick={() => setSignInOpen(true)}
@@ -905,6 +904,7 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
                     </svg>
                     Sign in with Google
                   </button>
+                  <SectionCTA href="#pricing" primary={false}>Get started</SectionCTA>
                 </div>
               ) : (
                 <>
