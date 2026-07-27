@@ -88,12 +88,40 @@ async def exchange(body: ExchangeIn, request: Request):
     """
     t0 = time.perf_counter()
     log_step("auth.exchange.start", f"id_token_len={len(body.id_token)}")
-    profile = verify_google_id_token(body.id_token)
+
+    settings = get_settings()
+    if not settings.GOOGLE_CLIENT_ID:
+        log_step("auth.exchange.no_client_id", "GOOGLE_CLIENT_ID is not configured")
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Google sign-in is not configured on the server. Contact the administrator.",
+        )
+
+    try:
+        profile = verify_google_id_token(body.id_token)
+    except ValueError as e:
+        log_step("auth.exchange.invalid_token", str(e))
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, f"Invalid Google token: {e}")
+    except Exception as e:
+        log_step("auth.exchange.verify_error", str(e))
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Google verification failed: {e}")
+
     log_step("auth.exchange.verified", f"email={profile.email} | {(time.perf_counter()-t0)*1000:.1f}ms")
-    user = _upsert_oauth_user(profile.email, profile.username, profile.github, profile.x)
-    api_key = generate_api_key()
-    db = get_supabase()
-    db.table("users").update({"api_key": api_key}).eq("id", user["id"]).execute()
+
+    try:
+        user = _upsert_oauth_user(profile.email, profile.username, profile.github, profile.x)
+    except Exception as e:
+        log_step("auth.exchange.user_error", str(e))
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"User database error: {e}")
+
+    try:
+        api_key = generate_api_key()
+        db = get_supabase()
+        db.table("users").update({"api_key": api_key}).eq("id", user["id"]).execute()
+    except Exception as e:
+        log_step("auth.exchange.key_error", str(e))
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, f"Failed to update API key: {e}")
+
     log_step("auth.exchange.done", f"email={profile.email} | id={user['id']} | {(time.perf_counter()-t0)*1000:.1f}ms")
     return _auth_out(user, api_key)
 

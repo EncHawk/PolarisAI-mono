@@ -27,11 +27,18 @@ export async function POST(req: Request) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id_token }),
     })
+    const responseText = await r.text()
+    console.log('[callback] backend status:', r.status, 'body:', responseText.slice(0, 500))
     if (!r.ok) {
-      const detail = await r.json().catch(() => ({ detail: 'exchange failed' }))
+      let detail: Record<string, unknown>
+      try {
+        detail = JSON.parse(responseText)
+      } catch {
+        detail = { detail: responseText || 'exchange failed' }
+      }
       return NextResponse.json(detail, { status: r.status })
     }
-    const out = (await r.json()) as { api_key: string; email: string }
+    const out = JSON.parse(responseText) as { api_key: string; email: string }
 
     const secure = process.env.NODE_ENV === 'production'
     ;(await cookies()).set({
