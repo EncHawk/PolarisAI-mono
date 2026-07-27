@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import Prism from 'prismjs'
 import 'prismjs/components/prism-python'
@@ -53,6 +53,7 @@ interface TraceEvent {
   status?: string
   message?: string
   conclusion?: string
+  timestamp?: Date
   [key: string]: unknown
 }
 
@@ -248,6 +249,9 @@ function CodeViewer({ content, language }: { content: string; language: string }
 
 function TraceItem({ event }: { event: TraceEvent }) {
   const agent = event.agent || 'SYSTEM'
+  const ts = event.timestamp
+    ? event.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : ''
   const colorMap: Record<string, string> = {
     READ: 'text-blue',
     RESEARCH: 'text-amber',
@@ -257,11 +261,15 @@ function TraceItem({ event }: { event: TraceEvent }) {
   }
   const color = colorMap[agent] || 'text-text4'
 
-  let display = event.message || JSON.stringify(event)
-  if (event.status) display += ` [status: ${event.status}]`
+  const parts: string[] = []
+  if (event.message) parts.push(event.message)
+  if (event.status && event.status !== 'running') parts.push(`[${event.status}]`)
+  if (event.conclusion) parts.push(`→ ${event.conclusion}`)
+  const display = parts.join(' ') || agent
 
   return (
     <div className="flex gap-2 py-1 font-mono text-[11px]">
+      <span className="shrink-0 text-[10px] text-text4">{ts}</span>
       <span className={cn('shrink-0 font-semibold', color)}>[{agent}]</span>
       <span className="text-text3 break-words">{display}</span>
     </div>
@@ -270,6 +278,7 @@ function TraceItem({ event }: { event: TraceEvent }) {
 
 export function CodeClient({ account, papers, isPro }: { account: Account; papers: Paper[]; isPro: boolean }) {
   const { toast } = useToast()
+  const [sidebarOpen, setSidebarOpen] = useState(true)
   const [selectedJob, setSelectedJob] = useState<string | null>(papers[0]?.job_uuid || null)
   const [session, setSession] = useState<CodeSession | null>(null)
   const [activeFile, setActiveFile] = useState<RepoFile | null>(null)
@@ -281,6 +290,8 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
   const [sending, setSending] = useState(false)
   const [newArxiv, setNewArxiv] = useState('')
   const [startingNew, setStartingNew] = useState(false)
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(260)
+  const [awaitingApproval, setAwaitingApproval] = useState<{ feedback: string } | null>(null)
   const tracesEndRef = useRef<HTMLDivElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -292,6 +303,7 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
       setFileContent(null)
       setTraces([])
       setChatMessages([])
+      setAwaitingApproval(null)
       return
     }
     let cancelled = false
@@ -344,7 +356,12 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
   const handleSSEMessage = useCallback((data: string) => {
     try {
       const parsed = JSON.parse(data) as TraceEvent
+      parsed.timestamp = new Date()
       setTraces((prev) => [...prev, parsed])
+
+      if (parsed.agent === 'PLAN' && parsed.kind === 'AWAIT_USER') {
+        setAwaitingApproval({ feedback: '' })
+      }
 
       // Also add to chat as system messages for key events
       if (parsed.message || parsed.status) {
@@ -515,7 +532,15 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
     <div className="flex h-screen flex-col bg-bg text-text">
       {/* Top bar */}
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((v) => !v)}
+            className="grid h-7 w-7 place-items-center rounded-lg text-xs text-text4 transition hover:bg-surface-alt hover:text-text"
+            title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+          >
+            {sidebarOpen ? '◀' : '▶'}
+          </button>
           <a href="/" className="inline-flex items-center gap-2 font-display text-sm font-semibold tracking-tight">
             <img src="/logo.png" alt="" className="h-5 w-5 rounded" />
             Polaris
@@ -539,7 +564,7 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar */}
-        <aside className="flex w-72 shrink-0 flex-col border-r border-border bg-surface-alt">
+        <aside className={cn('flex shrink-0 flex-col border-r border-border bg-surface-alt transition-all duration-200', sidebarOpen ? 'w-72' : 'w-0 overflow-hidden')}>
           <div className="border-b border-border p-3">
             <p className="mb-2 font-mono text-[10px] font-medium uppercase tracking-wider text-text4">New paper</p>
             <div className="flex gap-2">
@@ -698,8 +723,65 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
                 )}
               </div>
 
+              {/* Approval banner */}
+              {awaitingApproval && (
+                <div className="flex items-start gap-3 border-t border-amber-200 bg-amber-50/90 px-4 py-3">
+                  <div className="flex-1">
+                    <p className="mb-1 text-xs font-semibold text-amber-800">Plan ready — awaiting your approval</p>
+                    <textarea
+                      value={awaitingApproval.feedback}
+                      onChange={(e: ChangeEvent<HTMLTextAreaElement>) =>
+                        setAwaitingApproval({ feedback: e.target.value })
+                      }
+                      placeholder="Add suggestions or feedback (optional)"
+                      rows={2}
+                      className="w-full rounded-lg border border-amber-200 bg-white px-2.5 py-1.5 text-xs text-text outline-none transition focus:border-amber-400 resize-none"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (!selectedJob) return
+                      try {
+                        await fetch(`/api/proxy/plan/${selectedJob}/approve`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ approved: true, feedback: awaitingApproval.feedback }),
+                        })
+                        setAwaitingApproval(null)
+                      } catch {
+                        toast('Failed to submit approval')
+                      }
+                    }}
+                    className="shrink-0 rounded-lg bg-amber-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-amber-700"
+                  >
+                    Approve
+                  </button>
+                </div>
+              )}
+
+              {/* Drag handle */}
+              <div
+                className="shrink-0 h-1.5 cursor-row-resize bg-border hover:bg-blue/30 transition-colors"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  const startY = e.clientY
+                  const startH = bottomPanelHeight
+                  const onMove = (ev: MouseEvent) => {
+                    const delta = startY - ev.clientY
+                    setBottomPanelHeight(Math.min(500, Math.max(120, startH + delta)))
+                  }
+                  const onUp = () => {
+                    document.removeEventListener('mousemove', onMove)
+                    document.removeEventListener('mouseup', onUp)
+                  }
+                  document.addEventListener('mousemove', onMove)
+                  document.addEventListener('mouseup', onUp)
+                }}
+              />
+
               {/* Bottom panel: traces + chat */}
-              <div className="flex h-[260px] shrink-0 flex-col border-t border-border bg-surface-alt">
+              <div className="flex shrink-0 flex-col border-t border-border bg-surface-alt" style={{ height: bottomPanelHeight }}>
                 {/* Tabs for bottom panel */}
                 <div className="flex items-center gap-1 border-b border-border px-3">
                   <button type="button" className="px-3 py-2 text-xs font-medium text-text">Traces</button>
