@@ -21,41 +21,57 @@ export async function POST(req: Request) {
   }
 
   const exchangeUrl = `${BACKEND_URL}/auth/exchange`
+  let r: Response
   try {
-    const r = await fetch(exchangeUrl, {
+    r = await fetch(exchangeUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id_token }),
     })
-    const responseText = await r.text()
-    console.log('[callback] backend status:', r.status, 'body:', responseText.slice(0, 500))
-    if (!r.ok) {
-      let detail: Record<string, unknown>
-      try {
-        detail = JSON.parse(responseText)
-      } catch {
-        detail = { detail: responseText || 'exchange failed' }
-      }
-      return NextResponse.json(detail, { status: r.status })
-    }
-    const out = JSON.parse(responseText) as { api_key: string; email: string }
-
-    const secure = process.env.NODE_ENV === 'production'
-    ;(await cookies()).set({
-      name: SESSION_COOKIE,
-      value: out.api_key,
-      httpOnly: true,
-      sameSite: 'lax',
-      secure,
-      path: '/',
-      maxAge: 60 * 60 * 24 * 30,
-    })
-    return NextResponse.json({ ok: true, email: out.email })
   } catch (err) {
-    console.error('[callback] exchange fetch error:', err)
+    console.error('[callback] fetch failed entirely:', err)
     return NextResponse.json(
-      { detail: 'polaris callback failed: ' + ((err as Error)?.message || 'unknown') },
+      { detail: 'Network error reaching Polaris backend: ' + ((err as Error)?.message || 'unknown') },
       { status: 502 }
     )
   }
+
+  let responseText: string
+  try {
+    responseText = await r.text()
+  } catch {
+    responseText = ''
+  }
+
+  console.log('[callback] backend status:', r.status, 'body preview:', responseText.slice(0, 800))
+
+  if (!r.ok) {
+    let detail: Record<string, unknown>
+    try {
+      detail = JSON.parse(responseText) as Record<string, unknown>
+    } catch {
+      detail = { detail: responseText || `Backend returned ${r.status}` }
+    }
+    return NextResponse.json(detail, { status: r.status })
+  }
+
+  let out: { api_key: string; email: string }
+  try {
+    out = JSON.parse(responseText) as { api_key: string; email: string }
+  } catch {
+    console.error('[callback] backend returned ok but invalid json:', responseText.slice(0, 500))
+    return NextResponse.json({ detail: 'Backend returned invalid JSON' }, { status: 502 })
+  }
+
+  const secure = process.env.NODE_ENV === 'production'
+  ;(await cookies()).set({
+    name: SESSION_COOKIE,
+    value: out.api_key,
+    httpOnly: true,
+    sameSite: 'lax',
+    secure,
+    path: '/',
+    maxAge: 60 * 60 * 24 * 30,
+  })
+  return NextResponse.json({ ok: true, email: out.email })
 }
