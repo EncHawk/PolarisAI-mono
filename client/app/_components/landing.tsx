@@ -436,6 +436,7 @@ const plans: {
     name: 'Hobby',
     badge: 'Limited',
     price: '$1',
+    was: '$5',
     cadence: '/ month',
     features: ['READ → CODE pipeline', 'Plan approve / reject', 'Limited Feedback Loop', '1 Customisation'],
     cta: 'Claim Early Bird price.',
