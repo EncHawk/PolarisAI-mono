@@ -258,6 +258,34 @@ function CodeViewer({ content, language }: { content: string; language: string }
   )
 }
 
+async function fetchGitHubRepoFiles(githubUrl: string | null): Promise<RepoFile[]> {
+  if (!githubUrl) return []
+  const m = githubUrl.match(/github\.com[/:]([^/]+)\/([^/.]+?)(?:\.git)?$/)
+  if (!m) return []
+  const [, owner, repo] = m
+  try {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/git/trees/HEAD?recursive=1`)
+    if (!res.ok) return []
+    const data = await res.json()
+    if (!data.tree) return []
+    const files: RepoFile[] = []
+    for (const item of data.tree) {
+      if (item.type === 'blob') {
+        files.push({
+          name: item.path.split('/').pop() || item.path,
+          path: item.path,
+          type: 'file',
+          html_url: `https://github.com/${owner}/${repo}/blob/main/${item.path}`,
+          download_url: `https://raw.githubusercontent.com/${owner}/${repo}/main/${item.path}`,
+        })
+      }
+    }
+    return files.sort((a, b) => a.path.localeCompare(b.path))
+  } catch {
+    return []
+  }
+}
+
 function TraceItem({ event }: { event: TraceEvent }) {
   const agent = event.agent || 'SYSTEM'
   const ts = event.timestamp
@@ -325,6 +353,12 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
         const data = (await res.json()) as CodeSession
         if (cancelled) return
         setSession(data)
+        if (data.github_url && data.progress === 'completed') {
+          const ghFiles = await fetchGitHubRepoFiles(data.github_url)
+          if (ghFiles.length > 0) {
+            data.repo_contents = ghFiles
+          }
+        }
         const firstFile = data.repo_contents.find((f) => f.type === 'file')
         if (firstFile) setActiveFile(firstFile)
         else setActiveFile(null)
@@ -347,6 +381,12 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
       const res = await fetch(`/api/proxy/code/${selectedJob}`)
       if (!res.ok) return
       const data = (await res.json()) as CodeSession
+      if (data.github_url && (data.progress === 'completed' || data.progress === 'failed')) {
+        const ghFiles = await fetchGitHubRepoFiles(data.github_url)
+        if (ghFiles.length > 0) {
+          data.repo_contents = ghFiles
+        }
+      }
       setSession(data)
       const firstFile = data.repo_contents.find((f) => f.type === 'file')
       if (firstFile && !activeFile) setActiveFile(firstFile)
