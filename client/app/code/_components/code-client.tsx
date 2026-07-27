@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Prism from 'prismjs'
 import 'prismjs/components/prism-python'
 import 'prismjs/themes/prism-tomorrow.css'
+import { useToast } from '@/app/_components/toast'
 
 interface Account {
   id: string
@@ -150,9 +151,8 @@ function useSSE(jobUuid: string | null, onMessage: (data: string) => void) {
 
     async function connect() {
       try {
-        const res = await fetch(`/events/${jobUuid}`, {
+        const res = await fetch(`/api/proxy/events/${jobUuid}`, {
           signal: ctrl.signal,
-          credentials: 'include',
           headers: { Accept: 'text/event-stream' },
         })
         if (!res.ok || !res.body) {
@@ -269,6 +269,7 @@ function TraceItem({ event }: { event: TraceEvent }) {
 }
 
 export function CodeClient({ account, papers, isPro }: { account: Account; papers: Paper[]; isPro: boolean }) {
+  const { toast } = useToast()
   const [selectedJob, setSelectedJob] = useState<string | null>(papers[0]?.job_uuid || null)
   const [session, setSession] = useState<CodeSession | null>(null)
   const [activeFile, setActiveFile] = useState<RepoFile | null>(null)
@@ -296,7 +297,7 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
     let cancelled = false
     async function load() {
       try {
-        const res = await fetch(`/code/${selectedJob}`, { credentials: 'include' })
+        const res = await fetch(`/api/proxy/code/${selectedJob}`)
         if (!res.ok) return
         const data = (await res.json()) as CodeSession
         if (cancelled) return
@@ -391,9 +392,8 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
     try {
       // Try to send as plan feedback; if session is not in planning phase,
       // the backend may reject it — we still show it locally.
-      await fetch(`/plan/${selectedJob}/approve`, {
+      await fetch(`/api/proxy/plan/${selectedJob}/approve`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ approved: true, feedback: text }),
       })
@@ -409,9 +409,8 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
     if (!newArxiv.trim()) return
     setStartingNew(true)
     try {
-      const res = await fetch('/ingest', {
+      const res = await fetch('/api/proxy/ingest', {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           arxiv_url: newArxiv.trim(),
@@ -419,7 +418,7 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'Ingest failed' }))
-        alert(typeof err.detail === 'string' ? err.detail : 'Ingest failed')
+        toast(typeof err.detail === 'string' ? err.detail : 'Ingest failed')
         return
       }
       const data = (await res.json()) as { job_uuid: string; repo_exists: boolean; requires_code_choice: boolean }
@@ -427,7 +426,7 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
       // Refresh papers by navigating (simplest way to refresh server data)
       window.location.reload()
     } catch {
-      alert('Failed to start new paper')
+      toast('Failed to start new paper')
     } finally {
       setStartingNew(false)
     }
@@ -450,21 +449,20 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
     if (!selectedJob || acting) return
     setActing(true)
     try {
-      const res = await fetch(`/code/${selectedJob}/choice`, {
+      const res = await fetch(`/api/proxy/code/${selectedJob}/choice`, {
         method: 'POST',
-        credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'Choice failed' }))
-        alert(typeof err.detail === 'string' ? err.detail : 'Choice failed')
+        toast(typeof err.detail === 'string' ? err.detail : 'Choice failed')
         return
       }
       const data = (await res.json()) as { action: string; payment_required: boolean; payment_status: string }
       setSession((s) => (s ? { ...s, execution_mode: data.action as 'modify' | 'run', payment_status: data.payment_status as 'unpaid' | 'pending' | 'paid' } : s))
     } catch {
-      alert('Failed to set action')
+      toast('Failed to set action')
     } finally {
       setActing(false)
     }
@@ -474,18 +472,17 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
     if (!selectedJob || acting) return
     setActing(true)
     try {
-      const res = await fetch(`/code/${selectedJob}/pay-dev`, {
+      const res = await fetch(`/api/proxy/code/${selectedJob}/pay-dev`, {
         method: 'POST',
-        credentials: 'include',
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'Dev payment failed' }))
-        alert(typeof err.detail === 'string' ? err.detail : 'Dev payment failed')
+        toast(typeof err.detail === 'string' ? err.detail : 'Dev payment failed')
         return
       }
       setSession((s) => (s ? { ...s, payment_status: 'paid' } : s))
     } catch {
-      alert('Dev payment failed')
+      toast('Dev payment failed')
     } finally {
       setActing(false)
     }
@@ -495,18 +492,17 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
     if (!selectedJob || acting) return
     setActing(true)
     try {
-      const res = await fetch(`/code/${selectedJob}/start`, {
+      const res = await fetch(`/api/proxy/code/${selectedJob}/start`, {
         method: 'POST',
-        credentials: 'include',
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: 'Start failed' }))
-        alert(typeof err.detail === 'string' ? err.detail : 'Start failed')
+        toast(typeof err.detail === 'string' ? err.detail : 'Start failed')
         return
       }
       setSession((s) => (s ? { ...s, progress: 'in-progress' } : s))
     } catch {
-      alert('Failed to start job')
+      toast('Failed to start job')
     } finally {
       setActing(false)
     }

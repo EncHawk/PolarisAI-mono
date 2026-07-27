@@ -8,6 +8,7 @@ import { Header } from './header'
 import { Footer } from './footer'
 import { SignInOverlay } from './signin-overlay'
 import { useGoogleSignIn } from './google-signin'
+import { useToast } from './toast'
 
 declare global {
   interface Window {
@@ -334,7 +335,7 @@ function loadRazorpay(): Promise<boolean> {
   })
 }
 
-async function startCheckout(plan: PlanId, onError: (msg: string) => void) {
+async function startCheckout(plan: PlanId, onError: (msg: string) => void, onSuccess?: () => void) {
   const ready = await loadRazorpay()
   if (!ready || !window.Razorpay) {
     onError('Payment gateway failed to load. Try again.')
@@ -411,7 +412,7 @@ async function startCheckout(plan: PlanId, onError: (msg: string) => void) {
           return
         }
         onError('')
-        window.alert('Payment successful. Your credits have been added.')
+        onSuccess?.()
       } catch {
         onError('Payment verification failed. Contact support with your receipt.')
       }
@@ -511,6 +512,7 @@ function ThanksToast() {
 export function Landing({ authed, email, name }: { authed: boolean; email: string | null; name?: string | null }) {
   const searchParams = useSearchParams()
   const showThanks = searchParams.get('thanks') === '1'
+  const { toast } = useToast()
 
   const [payError, setPayError] = useState('')
   const [paying, setPaying] = useState<PlanId | null>(null)
@@ -548,11 +550,11 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
     try {
       await startCheckout(plan, (msg) => {
         if (msg) setPayError(msg)
-      })
+      }, () => toast('Payment successful. Your credits have been added.', 'success'))
     } finally {
       setPaying(null)
     }
-  }, [])
+  }, [toast])
 
   return (
     <div className="relative overflow-x-clip bg-bg text-text">
