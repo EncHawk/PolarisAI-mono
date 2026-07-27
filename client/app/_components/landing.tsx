@@ -84,11 +84,11 @@ function ScrollLine() {
 
 /* Rotating hero feature text */
 const HERO_FEATURES = [
-  'Read the paper. Trace the evidence.',
-  'Plan the build. Run the proof.',
-  'Reproduce falsified benchmarks.',
-  'From arXiv link to running code.',
-  'Every claim gets a witness.',
+  'Read the paper, while Polaris implements it.',
+  'Grab a coffee, while we plan your tests.',
+  'Reproduce numbers to ditch falsified benchmarks.',
+  'From arXiv link to running code to benchmarking, in a matter of minutes.',
+  'Fully Open-Source implementations, you pay for the GPUs and the customisations.',
 ]
 
 function RotatingHero() {
@@ -96,7 +96,7 @@ function RotatingHero() {
   const [i, setI] = useState(0)
   useEffect(() => {
     if (reduce) return
-    const t = setInterval(() => setI((v) => (v + 1) % HERO_FEATURES.length), 2800)
+    const t = setInterval(() => setI((v) => (v + 1) % HERO_FEATURES.length), 6000)
     return () => clearInterval(t)
   }, [reduce])
   return (
@@ -108,7 +108,7 @@ function RotatingHero() {
           initial={reduce ? false : { y: 18, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={reduce ? undefined : { y: -18, opacity: 0 }}
-          transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}
+          transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
         >
           {HERO_FEATURES[i]}
         </motion.p>
@@ -121,32 +121,32 @@ function RotatingHero() {
 const agents = [
   {
     label: 'READ',
-    title: 'Understand the paper',
-    features: ['Claim extraction', 'Method parsing', 'Baseline tables', 'Citation graph'],
+    title: 'Understanding the paper',
+    features: ['Understanding Intent', 'Extracting Claims', 'Citation graph'],
     log: [
       '[READ] arXiv:2403.12345 → parsing PDF…',
       '[READ] 6 claims, 3 baselines, 2 ablations.',
-      '[READ] Citation graph built (14 refs).',
+      '[READ] Digested full markdown, with 16 citations, picking the most relevant citations…',
     ],
   },
   {
     label: 'RESEARCH',
-    title: 'Trace the evidence',
-    features: ['Citation retracing', 'Context reconstruction', 'Numbers cross-check', 'Red flags flagged'],
+    title: 'Trace the references',
+    features: ['Citation retracing', 'Context reconstruction', 'Numbers cross-check'],
     log: [
-      '[RESEARCH] Retracing 14 citations…',
-      '[RESEARCH] ⚠ Table 3 reproduces only within ±0.4%.',
+      '[RESEARCH] Retracing 14 citations.',
+      '[RESEARCH] Reading cited papers…',
       '[RESEARCH] Context reconstructed.',
     ],
   },
   {
     label: 'PLAN',
-    title: 'Make it buildable',
-    features: ['Module blueprint', 'Test scaffold', 'Risk review', 'Approve / reject'],
+    title: 'Piece together all the contenxt',
+    features: ['Module blueprint', 'Test scaffold', 'Risk review', 'User Approval and Suggestions'],
     log: [
-      '[PLAN] Drafting build plan: 4 modules, 12 tests.',
+      '[PLAN] Drafting build plan: 4 files, 7 logs.',
       '[PLAN] Awaiting user approval…',
-      '[PLAN] Plan approved. Handing to CODE.',
+      '[PLAN] Plan approved. Heading over to CODE.',
     ],
   },
   {
@@ -155,7 +155,7 @@ const agents = [
     features: ['Sandbox spin-up', 'Dep install', 'pytest run', 'Reproduction verified'],
     log: [
       '[CODE] Spinning up sandbox → installing deps…',
-      '[CODE] pytest 11/12 passed.',
+      '[CODE] Reproducing Open World Benchmarks…',
       '[CODE] ✓ Reproduction verified.',
     ],
   },
@@ -214,15 +214,11 @@ function HowSection() {
       <div className="px-6 pt-28 pb-16">
         <div className="mx-auto w-full max-w-[1200px]">
           <Reveal>
-            <p className="mb-4 font-mono text-[11px] font-medium tracking-[0.16em] text-blue uppercase">
-              One paper. Four moves.
-            </p>
-            <h2 className="max-w-[16ch] font-display text-[clamp(2rem,4.5vw,3.5rem)] leading-[1.02] font-medium tracking-[-0.03em]">
-              From &ldquo;I should read this&rdquo; <span className="text-text3">to &ldquo;it actually works.&rdquo;</span>
+            <h2 className="max-w-[32ch] font-display text-[clamp(2rem,4.5vw,3.5rem)] leading-[1.02] font-medium tracking-[-0.03em]">
+              No more being lost reading a paper, our ensemble of agents are your <em className="not-italic text-blue text-3xl sm:text-5xl">North Star.</em>
             </h2>
-            <p className="mt-5 max-w-[34rem] text-[15px] leading-relaxed text-text3">
-              Scroll through each agent to see what it does. The terminal on the right shows live output
-              for the agent you&rsquo;re viewing.
+            <p className="mt-5 max-w-[34rem] text-base sm:text-[20px] leading-relaxed text-neutral-500">
+              READ -&gt; RESEARCH -&gt; PLAN -&gt; CODE is our mantra 🧘‍♂️
             </p>
           </Reveal>
         </div>
@@ -429,39 +425,36 @@ const plans: {
   badge?: string
   price: string
   was?: string
+  blurb?: string
   cadence: string
-  blurb: string
   features: string[]
   cta: string
   featured?: boolean
 }[] = [
   {
     id: 'starter',
-    name: 'Starter',
-    badge: 'Early bird',
+    name: 'Hobby',
+    badge: 'Limited',
     price: '$1',
     cadence: '/ month',
-    blurb: '10M tokens / month (~$0.05 per 100k input + output). Early bird: pay $1, get $5 in credits.',
-    features: ['~10M tokens / mo', 'READ → CODE pipeline', 'Plan approve / reject', 'Sandbox file review'],
-    cta: 'Claim early bird',
+    features: ['READ → CODE pipeline', 'Plan approve / reject', 'Limited Feedback Loop', '1 Customisation'],
+    cta: 'Claim Early Bird price.',
   },
   {
     id: 'pro',
     name: 'Pro',
     price: '$20',
     cadence: '/ month',
-    blurb: '40M tokens / month for researchers who implement papers every week and need real throughput.',
-    features: ['~40M tokens / mo', 'Priority queue', 'Plan approve / reject', 'Sandbox file review'],
+    features: ['Priority Execution', '0.5x GPU access (beta)', 'Limited Train Jobs', '20 Feedback Loops' , 'Sandbox File Preview'],
     cta: 'Go Pro',
     featured: true,
   },
   {
     id: 'lab',
-    name: 'Lab',
-    price: '$200',
+    name: 'MAX',
+    price: '$100',
     cadence: '/ month',
-    blurb: '400M tokens / month for whole labs — run, customize, and train on full paper sets.',
-    features: ['~400M tokens / mo', 'Highest priority GPU queue', 'Team-ready throughput', 'Unlimited customisations'],
+    features: ['Highest priority GPU queue (beta)', '100 Train Jobs', 'Full Sandbox Access', 'Unlimited Customisations'],
     cta: 'Scale the lab',
   },
 ]
@@ -582,11 +575,11 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
           <Reveal>
             <RotatingHero />
             <h1 className="mt-6 w-full max-w-[18ch] font-display text-[clamp(2rem,7vw,5.4rem)] leading-[0.98] font-medium tracking-[-0.03em] text-text sm:leading-[0.94] sm:tracking-[-0.04em]">
-              Never feel lost in a paper <em className="not-italic text-blue">ever again.</em>
+              The Runtime environment for any ML Paper<em className="not-italic text-blue">.</em>
             </h1>
-            <p className="mt-7 max-w-[34rem] text-base leading-relaxed text-text3 sm:text-lg">
-              Polaris reads the paper, traces the evidence, plans the build, and writes the code —
-              every paper you open becomes something you can run.
+            <p className="mt-7 max-w-[42rem] text-base leading-relaxed text-neutral-700 sm:text-lg">
+              Polaris <em className="not-italic text-blue text-lg sm:text-xl">Reads</em> the paper, <em className="not-italic text-blue text-lg sm:text-xl">Plans</em> the build, and <em className="not-italic text-blue text-lg sm:text-xl">Codes</em> the implementation. 
+              Every paper gets a sandbox to run <em className="not-italic text-blue text-lg sm:text-xl">Benchmarks</em>.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3 sm:gap-4">
               {/*
@@ -667,7 +660,7 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
                   {plan.was ? <span className="mb-1 text-sm text-text4 line-through">{plan.was}</span> : null}
                   <span className="mb-1 text-sm text-text3">{plan.cadence}</span>
                 </div>
-                <p className="mt-3 text-sm leading-relaxed text-text3">{plan.blurb}</p>
+                {plan.blurb ? <p className="mt-3 text-sm leading-relaxed text-text3">{plan.blurb}</p> : null}
                 <ul className="mt-6 flex flex-1 flex-col gap-2.5">
                   {plan.features.map((f) => (
                     <li key={f} className="flex items-start gap-2.5 text-sm text-text">
