@@ -1,7 +1,7 @@
 'use client'
 
 import { motion, AnimatePresence } from 'motion/react'
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, type RefCallback } from 'react'
 
 export type SignInStatus = 'idle' | 'loading' | 'verifying' | 'error'
 
@@ -18,7 +18,7 @@ export function SignInOverlay({
   hint: string
   onRetry: () => void
   onDismiss: () => void
-  buttonRef?: (el: HTMLDivElement) => void
+  buttonRef?: RefCallback<HTMLDivElement>
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -33,7 +33,7 @@ export function SignInOverlay({
   return (
     <AnimatePresence>
       <motion.div
-        className="polaris-modal-overlay"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
@@ -41,7 +41,7 @@ export function SignInOverlay({
         onClick={() => status !== 'verifying' && status !== 'loading' && onDismiss()}
       >
         <motion.div
-          className="polaris-modal-card"
+          className="relative w-full max-w-sm rounded-2xl border border-border-strong bg-white p-8 shadow-2xl"
           initial={{ opacity: 0, y: 16, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: 8, scale: 0.98 }}
@@ -53,21 +53,23 @@ export function SignInOverlay({
         >
           {(status === 'loading' || status === 'verifying') && (
             <div className="flex flex-col items-center text-center">
-              {/* Google Sign-In button is rendered into this container */}
-              <div ref={(el) => { if (el && buttonRef && status === 'loading') buttonRef(el) }} className="mt-2 min-h-[50px]" />
+              <img src="/logo.png" alt="" className="h-10 w-10 rounded-xl" />
+              <h1 className="mt-4 font-display text-xl font-semibold tracking-tight text-text">Welcome to Polaris</h1>
+              <p className="mt-1.5 text-xs leading-relaxed text-text3 max-w-[28ch]">
+                Turn arXiv papers into runnable code. Sign in with Google to get started.
+              </p>
+              {status === 'loading' && (
+                <>
+                  <div ref={buttonRef} className="mt-6 min-h-[50px]" />
+                  <p className="mt-4 text-[11px] text-text4">
+                    By signing in you agree to our Terms of Service.
+                  </p>
+                </>
+              )}
               {status === 'verifying' && (
                 <>
                   <div className="polaris-spinner mt-6" role="status" aria-live="polite" />
-                  <h2 className="mt-4 font-display text-xl font-medium tracking-tight text-text">Signing you in</h2>
-                  <motion.p
-                    key={hint}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.25 }}
-                    className="mt-2 font-mono text-[12px] tracking-wide text-blue"
-                  >
-                    {hint}
-                  </motion.p>
+                  <p className="mt-3 font-mono text-[12px] tracking-wide text-blue">{hint}</p>
                 </>
               )}
             </div>

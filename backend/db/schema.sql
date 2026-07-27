@@ -36,6 +36,8 @@ alter table users add column if not exists renews_at timestamptz;
 -- credits: int -> numeric(12,4) USD. Existing rows keep value (3 -> $3.0000).
 alter table users alter column credits type numeric(12,4) using credits::numeric(12,4);
 alter table users alter column credits set default 0.0000;
+alter table users add column if not exists papers jsonb not null default '[]'::jsonb;
+alter table users add column if not exists private_repos jsonb not null default '[]'::jsonb;
 
 -- usage_events: append-only ledger of LLM token usage. The backend atomically
 -- deducts cost_usd from users.credits on each insert.

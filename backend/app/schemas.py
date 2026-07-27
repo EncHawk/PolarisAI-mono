@@ -28,6 +28,8 @@ class AccountOut(BaseModel):
     credits: float
     subscription_tier: str | None = None
     renews_at: str | None = None
+    papers: list[dict] = []
+    private_repos: list[str] = []
 
 
 class IngestIn(BaseModel):

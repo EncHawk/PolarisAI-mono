@@ -40,6 +40,8 @@ export interface Account {
   credits: number
   subscription_tier: string | null
   renews_at: string | null
+  papers?: Record<string, unknown>[]
+  private_repos?: string[]
 }
 
 export async function getAccount(): Promise<Account | null> {
