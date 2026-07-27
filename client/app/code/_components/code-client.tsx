@@ -234,16 +234,27 @@ function FileTabs({
 }
 
 function CodeViewer({ content, language }: { content: string; language: string }) {
-  const ref = useRef<HTMLElement>(null)
+  const codeRef = useRef<HTMLElement>(null)
+
   useEffect(() => {
-    if (ref.current) {
-      Prism.highlightElement(ref.current)
+    if (codeRef.current) {
+      Prism.highlightElement(codeRef.current)
     }
   }, [content, language])
+
+  const lines = useMemo(() => content.split('\n'), [content])
+
   return (
-    <pre className="h-full overflow-auto bg-[#1d1f21] p-4 text-[13px] leading-relaxed">
-      <code ref={ref} className={`language-${language}`}>{content}</code>
-    </pre>
+    <div className="flex h-full overflow-auto bg-[#1d1f21] text-[13px] leading-relaxed">
+      <div className="select-none shrink-0 text-right text-[#444] py-4 pr-3 text-[13px] leading-relaxed" style={{ minWidth: 40 }}>
+        {lines.map((_, i) => (
+          <div key={i}>{i + 1}</div>
+        ))}
+      </div>
+      <pre className="flex-1 py-4 pr-4">
+        <code ref={codeRef} className={`language-${language}`}>{content}</code>
+      </pre>
+    </div>
   )
 }
 
@@ -328,6 +339,22 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
     return () => { cancelled = true }
   }, [selectedJob])
 
+  // Re-fetch session data (repo_contents etc) when SSE indicates completion
+  // so GitHub code appears in the file viewer.
+  const refreshSession = useCallback(async () => {
+    if (!selectedJob) return
+    try {
+      const res = await fetch(`/api/proxy/code/${selectedJob}`)
+      if (!res.ok) return
+      const data = (await res.json()) as CodeSession
+      setSession(data)
+      const firstFile = data.repo_contents.find((f) => f.type === 'file')
+      if (firstFile && !activeFile) setActiveFile(firstFile)
+    } catch {
+      /* ignore */
+    }
+  }, [selectedJob, activeFile])
+
   // Fetch file content when active file changes
   useEffect(() => {
     if (!activeFile?.download_url) {
@@ -377,14 +404,15 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
         ])
       }
 
-      // Update session progress if terminal status
+      // Update session progress if terminal status and re-fetch for repo_contents
       if (parsed.status === 'failed' || parsed.status === 'completed') {
         setSession((s) => (s ? { ...s, progress: parsed.status as 'failed' | 'completed' } : s))
+        refreshSession()
       }
     } catch {
       setTraces((prev) => [...prev, { message: data }])
     }
-  }, [])
+  }, [refreshSession])
 
   const { connected: sseConnected, error: sseError, disconnect } = useSSE(selectedJob, handleSSEMessage)
 
