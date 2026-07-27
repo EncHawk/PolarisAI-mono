@@ -54,11 +54,13 @@ def output(job_uuid: str, agent: AgentName, conclusion: str,
          output_query=output_query)
 
 
-def status(job_uuid: str, status_val: str) -> None:
+def status(job_uuid: str, status_val: str, **extra: str) -> None:
     get_redis().hset(f"polaris:state:{job_uuid}", "status", status_val)
     import json
+    payload: dict[str, str] = {"status": status_val}
+    payload.update(extra)
     emit(job_uuid, AgentName.SYSTEM, TraceKind.STATUS, step="status",
-         conclusion=status_val, output_query=json.dumps({"status": status_val}))
+         conclusion=status_val, output_query=json.dumps(payload))
 
 
 def await_user(job_uuid: str, agent: AgentName, conclusion: str, output_query: str) -> None:

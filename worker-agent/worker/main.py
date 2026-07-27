@@ -117,11 +117,12 @@ def run_one(app, job: dict) -> None:
         })
         timer.job_end("failed", error=push_error)
     else:
-        status(job_uuid, "done")
+        gh_url = final.get("code", {}).get("github_url", "")
+        status(job_uuid, "done", github_url=gh_url)
         update_paper_status(paper_id, "done",
                             {"code_files": json.dumps(final.get("code", {}).get("files", []))[:100000]})
         update_code_session(job_uuid, "completed", {
-            "github_url": final.get("code", {}).get("github_url"),
+            "github_url": gh_url,
         })
         timer.job_end("done")
     step(job_uuid, AgentName.SYSTEM, "job-end",

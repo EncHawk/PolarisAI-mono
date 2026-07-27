@@ -473,6 +473,21 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
       // Update session progress if terminal status and re-fetch for repo_contents
       if (parsed.status === 'failed' || parsed.status === 'completed') {
         setSession((s) => (s ? { ...s, progress: parsed.status as 'failed' | 'completed' } : s))
+        let ghUrl = ''
+        if (parsed.output_query && typeof parsed.output_query === 'string') {
+          try {
+            const q = JSON.parse(parsed.output_query) as Record<string, string>
+            if (q.github_url) ghUrl = q.github_url
+          } catch {}
+        }
+        if (ghUrl) {
+          fetchGitHubRepoFiles(ghUrl).then((files) => {
+            if (files.length > 0) {
+              setSession((s) => (s ? { ...s, repo_contents: files } : s))
+              setActiveFile(files[0])
+            }
+          })
+        }
         refreshSession()
       }
     } catch {

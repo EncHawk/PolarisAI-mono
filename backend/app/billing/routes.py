@@ -118,7 +118,7 @@ async def create_order(
         log_step("billing.checkout.reject", f"reason=below_minimum | amount_paise={amount_paise}")
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "minimum amount is 100 paise (₹1)")
 
-    receipt = f"polaris_{user_id[:24]}_{int(time.time())}"
+    receipt = f"p_{user_id[:16]}_{int(time.time())}"
 
     t1 = time.perf_counter()
     log_step("billing.checkout.razorpay.call", f"amount={amount_paise} | receipt={receipt}")
