@@ -21,7 +21,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 # First-time OAuth users get a $3.00 starting balance (matches the legacy
 # `credits=3` integer default, now in USD).
-SIGNUP_BONUS_USD = 3.0000
+SIGNUP_BONUS_USD = 5.0000
 
 
 def _auth_out(user: dict, api_key: str) -> AuthOut:

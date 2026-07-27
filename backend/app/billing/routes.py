@@ -22,9 +22,9 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 SUBSCRIPTION_PLANS: dict[str, dict[str, object]] = {
     "starter": {
         "name": "Polaris Starter",
-        "amount_paise": 500_00,        # ₹500/mo  (~$5/mo)
-        "description": "$5/mo — ~10M tokens (input + output) per month.",
-        "grant_usd": Decimal("5.00"),
+        "amount_paise": 100_00,        # ₹100/mo  (~$1/mo — early bird launch price)
+        "description": "$1/mo — ~10M tokens (input + output) per month. Early bird: pay $1, get $5 in credits.",
+        "grant_usd": Decimal("5.00"),  # Early bird: still grant $5 even at $1 price
     },
     "pro": {
         "name": "Polaris Pro",
