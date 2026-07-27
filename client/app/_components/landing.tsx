@@ -1,6 +1,6 @@
 'use client'
 
-import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
+import { motion, AnimatePresence, useReducedMotion, useScroll, useTransform, useMotionValueEvent } from 'motion/react'
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -424,41 +424,108 @@ const agents = [
   },
 ]
 
-function AgentMarquee({ active, onHover }: { active: number; onHover: (i: number) => void }) {
-  const loop = [...agents, ...agents]
+function AgentCard({ agent, index }: { agent: (typeof agents)[number]; index: number }) {
   return (
-    <div className="relative overflow-hidden">
-      <div className="marquee gap-4">
-        {loop.map((agent, idx) => {
-          const i = idx % agents.length
-          const isActive = i === active
-          return (
-            <div
-              key={idx}
-              onMouseEnter={() => onHover(i)}
-              className={[
-                'card-shine w-[260px] shrink-0 cursor-pointer rounded-2xl border bg-white p-6 transition-colors duration-300',
-                isActive ? 'border-blue' : 'border-border',
-              ].join(' ')}
-            >
-              <span className="font-mono text-[11px] text-text4">0{i + 1}</span>
-              <p className="mt-3 font-mono text-[11px] font-medium tracking-[0.14em] text-blue">{agent.label}</p>
-              <h3 className="mt-1.5 font-display text-base font-medium tracking-tight text-text">{agent.title}</h3>
-              <ul className="mt-3 flex flex-col gap-1.5">
-                {agent.features.map((f) => (
-                  <li key={f} className="flex items-center gap-2 text-[12.5px] text-text3">
-                    <span className="h-1 w-1 shrink-0 rounded-full bg-blue" />
-                    {f}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )
-        })}
+    <div className="card-shine flex h-full flex-col justify-between rounded-3xl border border-border bg-white p-10">
+      <div>
+        <div className="flex items-center gap-4">
+          <span className="font-mono text-sm text-text4">0{index + 1} / 04</span>
+          <span className="h-px flex-1 bg-border" />
+          <span className="font-mono text-sm font-medium tracking-[0.14em] text-blue">{agent.label}</span>
+        </div>
+        <h3 className="mt-8 font-display text-3xl font-medium tracking-tight text-text">{agent.title}</h3>
+        <ul className="mt-8 flex flex-col gap-3">
+          {agent.features.map((f) => (
+            <li key={f} className="flex items-center gap-3 text-base text-text3">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue" />
+              {f}
+            </li>
+          ))}
+        </ul>
       </div>
-      <div className="pointer-events-none absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-white to-transparent" />
-      <div className="pointer-events-none absolute inset-y-0 right-0 w-12 bg-gradient-to-l from-white to-transparent" />
+      <div className="mt-8 flex items-center justify-between">
+        <span className="font-mono text-xs text-text4">
+          {index < 3 ? 'Scroll to continue →' : 'Done — keep scrolling for pricing'}
+        </span>
+        <span className="font-mono text-xs text-blue">{agent.label}</span>
+      </div>
     </div>
+  )
+}
+
+function HowSection() {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const { scrollYProgress } = useScroll({ target: scrollRef, offset: ['start start', 'end end'] })
+  const [activeIdx, setActiveIdx] = useState(0)
+
+  // Cards slide up: 4 cards stacked, translate from 0% to -75% (3/4 of total height).
+  const cardY = useTransform(scrollYProgress, [0, 1], ['0%', '-75%'])
+  // Progress bar width.
+  const progressWidth = useTransform(scrollYProgress, [0, 1], ['0%', '100%'])
+
+  useMotionValueEvent(scrollYProgress, 'change', (v) => {
+    setActiveIdx(Math.min(agents.length - 1, Math.floor(v * agents.length)))
+  })
+
+  return (
+    <section id="how" className="relative bg-surface-alt">
+      {/* Heading — normal flow above the sticky scroll zone */}
+      <div className="px-6 pt-28 pb-16">
+        <div className="mx-auto w-full max-w-[1200px]">
+          <Reveal>
+            <p className="mb-4 font-mono text-[11px] font-medium tracking-[0.16em] text-blue uppercase">
+              One paper. Four moves.
+            </p>
+            <h2 className="max-w-[16ch] font-display text-[clamp(2rem,4.5vw,3.5rem)] leading-[1.02] font-medium tracking-[-0.03em]">
+              From “I should read this” <span className="text-text3">to “it actually works.”</span>
+            </h2>
+            <p className="mt-5 max-w-[34rem] text-[15px] leading-relaxed text-text3">
+              Scroll through each agent to see what it does. The terminal on the right shows live output
+              for the agent you’re viewing.
+            </p>
+          </Reveal>
+        </div>
+      </div>
+
+      {/* Scroll-driven card stack + static terminal */}
+      <div ref={scrollRef} className="relative h-[400vh]">
+        <div className="sticky top-0 flex h-screen items-center overflow-hidden">
+          <div className="mx-auto w-full max-w-[1200px] px-6">
+            <div className="grid gap-8 lg:grid-cols-[1.3fr_1fr] lg:items-center">
+              {/* Left: vertical card window */}
+              <div className="relative h-[460px] overflow-hidden rounded-3xl">
+                <motion.div style={{ y: cardY }} className="flex flex-col">
+                  {agents.map((agent, i) => (
+                    <div key={agent.label} className="h-[460px] shrink-0 p-1">
+                      <AgentCard agent={agent} index={i} />
+                    </div>
+                  ))}
+                </motion.div>
+                {/* Fade edges for smooth card transitions */}
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-surface-alt to-transparent" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-surface-alt to-transparent" />
+              </div>
+
+              {/* Right: static terminal + progress */}
+              <div className="flex flex-col gap-4">
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-text4">
+                    Agent {activeIdx + 1} of 4
+                  </span>
+                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-border">
+                    <motion.div
+                      style={{ width: progressWidth }}
+                      className="h-full rounded-full bg-blue"
+                    />
+                  </div>
+                </div>
+                <Terminal agent={agents[activeIdx]} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   )
 }
 
@@ -512,7 +579,7 @@ function Terminal({ agent }: { agent: (typeof agents)[number] }) {
           polaris — {agent.label.toLowerCase()} session
         </span>
       </div>
-      <pre className="min-h-[230px] px-5 py-4 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#FAF7F2]">
+      <pre className="h-[388px] overflow-y-auto px-5 py-4 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#FAF7F2]">
         {shown}
         <motion.span aria-hidden animate={{ opacity: [1, 0] }} transition={{ duration: 0.6, repeat: Infinity }} className="text-blue-soft">
           ▋
@@ -660,10 +727,16 @@ function Header({
         <span>Polaris</span>
       </a>
       <nav className="hidden items-center gap-7 text-sm font-medium text-text3 sm:flex">
-        <a href="#how" className="transition hover:text-blue">How it works</a>
         <a href="#pricing" className="transition hover:text-blue">Pricing</a>
+        <a href="#how" className="transition hover:text-blue">How it works</a>
       </nav>
       <div className="flex items-center gap-3">
+        <a
+          href="#pricing"
+          className="btn-sheen hidden h-10 items-center rounded-[10px] bg-blue px-5 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(5,98,239,0.28)] sm:inline-flex"
+        >
+          Get started
+        </a>
         {authed ? (
           <div className="flex items-center gap-3">
             <a
@@ -675,7 +748,7 @@ function Header({
             <button
               type="button"
               onClick={onSignOut}
-              className="inline-flex h-9 items-center rounded-[10px] border border-border-strong bg-white px-3 text-xs font-bold text-text3 transition hover:border-blue hover:text-text"
+              className="inline-flex h-10 items-center rounded-[10px] border border-border-strong bg-white px-5 text-xs font-bold text-text3 transition hover:border-blue hover:text-text"
             >
               Sign out
             </button>
@@ -684,17 +757,11 @@ function Header({
           <button
             type="button"
             onClick={onSignIn}
-            className="btn-sheen inline-flex h-9 items-center rounded-[10px] bg-blue px-4 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(5,98,239,0.28)]"
+            className="btn-sheen inline-flex h-10 items-center rounded-[10px] bg-blue px-5 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(5,98,239,0.28)]"
           >
             Sign in
           </button>
         )}
-        <a
-          href="#pricing"
-          className="btn-sheen hidden h-10 items-center rounded-[10px] bg-blue px-4 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(5,98,239,0.28)] sm:inline-flex"
-        >
-          Get started
-        </a>
       </div>
     </motion.header>
   )
@@ -755,8 +822,8 @@ function SectionCTA({ href, onClick, children, primary = true, type = 'link' }: 
   type?: 'link' | 'button'
 }) {
   const cls = primary
-    ? 'btn-sheen inline-flex h-12 items-center rounded-xl bg-blue px-5 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(5,98,239,0.3)]'
-    : 'inline-flex h-11 items-center rounded-xl border border-border-strong bg-white px-4 text-sm font-bold text-text3 transition hover:border-blue hover:bg-surface-blue hover:text-text'
+    ? 'btn-sheen inline-flex h-12 items-center rounded-xl bg-blue px-6 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(5,98,239,0.3)]'
+    : 'inline-flex h-12 items-center rounded-xl border border-border-strong bg-white px-6 text-sm font-bold text-text3 transition hover:border-blue hover:bg-surface-blue hover:text-text'
   return type === 'link' ? (
     <a href={href} className={cls}>{children}</a>
   ) : (
@@ -767,7 +834,6 @@ function SectionCTA({ href, onClick, children, primary = true, type = 'link' }: 
 export function Landing({ authed, email }: { authed: boolean; email: string | null }) {
   const [payError, setPayError] = useState('')
   const [paying, setPaying] = useState<PlanId | null>(null)
-  const [activeAgent, setActiveAgent] = useState(0)
   const [signInOpen, setSignInOpen] = useState(false)
   const [authedState, setAuthed] = useState(authed)
   const [emailState, setEmail] = useState(email)
@@ -776,11 +842,6 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
     setAuthed(authed)
     setEmail(email)
   }, [authed, email])
-
-  useEffect(() => {
-    const t = setInterval(() => setActiveAgent((v) => (v + 1) % agents.length), 5200)
-    return () => clearInterval(t)
-  }, [])
 
   const onSignedIn = useCallback((signedInEmail: string) => {
     setAuthed(true)
@@ -830,12 +891,12 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
             <div className="mt-10 flex flex-wrap items-center gap-4">
               {!authedState ? (
                 <div className="flex items-center gap-4">
+                  <SectionCTA href="#pricing" primary={false}>See pricing</SectionCTA>
                   <button
                     type="button"
                     onClick={() => setSignInOpen(true)}
-                    className="btn-sheen inline-flex h-12 items-center gap-2 rounded-xl bg-blue px-5 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(5,98,239,0.3)]"
+                    className="btn-sheen inline-flex h-12 items-center gap-2 rounded-xl bg-blue px-6 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(5,98,239,0.3)]"
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
                       <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.17-1.84H9v3.49h4.84a4.14 4.14 0 0 1-1.79 2.71v2.26h2.9a8.77 8.77 0 0 0 2.69-6.62z"/>
                       <path fill="#34A853" d="M9 18c2.43 0 4.47-.81 5.96-2.18l-2.9-2.26c-.8.54-1.83.86-3.06.86-2.35 0-4.34-1.59-5.05-3.73H.96v2.32A9 9 0 0 0 9 18z"/>
@@ -844,7 +905,6 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
                     </svg>
                     Sign in with Google
                   </button>
-                  <SectionCTA href="#pricing" primary={false}>See pricing</SectionCTA>
                 </div>
               ) : (
                 <>
@@ -857,32 +917,7 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
         </div>
       </section>
 
-      <section id="how" className="relative z-10 flex min-h-screen flex-col justify-center bg-surface-alt px-6 py-28">
-        <div className="relative z-20 mx-auto w-full max-w-[1200px]">
-          <Reveal>
-            <p className="mb-4 font-mono text-[11px] font-medium tracking-[0.16em] text-blue uppercase">
-              One paper. Four moves.
-            </p>
-            <h2 className="max-w-[16ch] font-display text-[clamp(2rem,4.5vw,3.5rem)] leading-[1.02] font-medium tracking-[-0.03em]">
-              From “I should read this” <span className="text-text3">to “it actually works.”</span>
-            </h2>
-          </Reveal>
-          <div className="mt-14 grid gap-10 lg:grid-cols-[1.5fr_1fr] lg:items-start">
-            <div>
-              <AgentMarquee active={activeAgent} onHover={setActiveAgent} />
-              <p className="mt-6 text-[14px] leading-relaxed text-text3">
-                Hover any card to see that agent go to work in the terminal.
-              </p>
-              <div className="mt-10">
-                <SectionCTA href="#pricing">Start a paper session</SectionCTA>
-              </div>
-            </div>
-            <div className="lg:sticky lg:top-28">
-              <Terminal agent={agents[activeAgent]} />
-            </div>
-          </div>
-        </div>
-      </section>
+      <HowSection />
 
       <section id="pricing" className="relative z-10 flex min-h-screen flex-col justify-center bg-surface-blue px-6 py-28">
         <div className="relative z-20 mx-auto w-full max-w-[1200px]">
@@ -945,7 +980,7 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
                   whileHover={{ y: -2 }}
                   transition={{ type: 'spring', stiffness: 400, damping: 18, delay: 0.06 }}
                   className={[
-                    'btn-sheen mt-8 inline-flex h-11 items-center justify-center rounded-xl px-4 text-sm font-bold transition',
+                    'btn-sheen mt-8 inline-flex h-12 items-center justify-center rounded-xl px-6 text-sm font-bold transition',
                     plan.featured
                       ? 'bg-blue text-white shadow-sm'
                       : 'border border-border-strong bg-white text-text hover:bg-surface-blue',
