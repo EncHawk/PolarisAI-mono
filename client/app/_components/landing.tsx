@@ -579,7 +579,11 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
               every paper you open becomes something you can run.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3 sm:gap-4">
-              <SectionCTA href="/code">Get started</SectionCTA>
+              {!authedState ? (
+                <SectionCTA onClick={signIn} type="button">Get started</SectionCTA>
+              ) : (
+                <SectionCTA href="/code">Get started</SectionCTA>
+              )}
               <SectionCTA href="/#how" primary={false}>How it works</SectionCTA>
             </div>
           </Reveal>

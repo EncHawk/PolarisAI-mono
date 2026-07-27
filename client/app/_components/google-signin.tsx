@@ -120,6 +120,11 @@ export function useGoogleSignIn(onSignedIn: (email: string) => void) {
   }, [clientId, gisCallback])
 
   const signIn = useCallback(() => {
+    if (!clientId) {
+      setStatus('error')
+      setError('Google sign-in is not configured. Set NEXT_PUBLIC_GOOGLE_CLIENT_ID and rebuild.')
+      return
+    }
     setStatus('loading')
     setError('')
 
