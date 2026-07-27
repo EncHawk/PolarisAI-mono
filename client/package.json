@@ -11,8 +11,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@types/prismjs": "^1.26.6",
+    "@upstash/redis": "^1.38.0",
     "motion": "^12.42.2",
     "next": "^15.5.0",
+    "prismjs": "^1.30.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

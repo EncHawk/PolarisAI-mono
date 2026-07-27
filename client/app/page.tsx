@@ -7,6 +7,7 @@ export default async function Page() {
     <Landing
       authed={!!account}
       email={account?.email ?? null}
+      name={account?.name ?? null}
     />
   )
 }

@@ -3,6 +3,11 @@
 import { motion, AnimatePresence, useReducedMotion, useScroll, useTransform, useMotionValueEvent } from 'motion/react'
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { Header } from './header'
+import { Footer } from './footer'
+import { SignInOverlay } from './signin-overlay'
+import { useGoogleSignIn } from './google-signin'
 
 declare global {
   interface Window {
@@ -10,35 +15,10 @@ declare global {
       open: () => void
       on: (event: string, handler: (response: unknown) => void) => void
     }
-    google?: {
-      accounts: {
-        id: {
-          initialize: (config: {
-            client_id: string
-            callback: (response: { credential?: string }) => void
-          }) => void
-          prompt: () => void
-          renderButton: (
-            parent: HTMLElement,
-            options: {
-              type?: 'standard' | 'icon'
-              size?: 'large' | 'medium' | 'small'
-              text?: 'signin' | 'signup' | 'continue' | 'signin_with'
-              shape?: 'rectangular' | 'pill' | 'circle' | 'square'
-              theme?: 'outline' | 'filled_blue' | 'filled_black'
-              width?: number
-              locale?: string
-            },
-          ) => void
-        }
-      }
-    }
   }
 }
 
 type PlanId = 'starter' | 'pro' | 'lab'
-
-/*  Reveal helpers  */
 
 function Reveal({ children, className = '', delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
   const reduce = useReducedMotion()
@@ -55,8 +35,7 @@ function Reveal({ children, className = '', delay = 0 }: { children: ReactNode; 
   )
 }
 
-/*  Scroll-drawn line  */
-
+/* Scroll-drawn line */
 function ScrollLine() {
   const pathRef = useRef<SVGPathElement | null>(null)
   useEffect(() => {
@@ -100,267 +79,9 @@ function ScrollLine() {
   )
 }
 
-function PolarisWordmark() {
-  const reduce = useReducedMotion()
-  return (
-    <motion.div
-      className="group inline-flex w-full cursor-default justify-center select-none"
-      initial="idle"
-      animate="idle"
-      whileHover={reduce ? undefined : 'draw'}
-    >
-      <svg viewBox="0 0 1100 200" className="w-full max-w-[1100px]" aria-label="POLARIS" role="img">
-        <motion.text
-          x="550"
-          y="150"
-          textAnchor="middle"
-          fontFamily="'Space Grotesk', sans-serif"
-          fontWeight={600}
-          fontSize={180}
-          letterSpacing="-9"
-          stroke="var(--color-blue)"
-          strokeWidth={1.4}
-          strokeLinejoin="round"
-          strokeLinecap="round"
-          fill="var(--color-blue)"
-          style={{ strokeDasharray: 2400 }}
-          variants={{
-            draw: {
-              strokeDashoffset: [2400, 0],
-              fillOpacity: [0, 0, 1],
-              transition: { duration: 1.6, ease: 'easeInOut', times: [0, 0.55, 1] },
-            },
-            idle: {
-              strokeDashoffset: 0,
-              fillOpacity: 0,
-              transition: { duration: 0.7, ease: 'easeOut' },
-            },
-          }}
-        >
-          POLARIS
-        </motion.text>
-      </svg>
-    </motion.div>
-  )
-}
 
-/*  Google Identity Services — direct prompt flow  */
 
-function loadGoogleIdentity(): Promise<void> {
-  if (window.google?.accounts?.id) return Promise.resolve()
-  return new Promise((resolve) => {
-    const script = document.createElement('script')
-    script.src = 'https://accounts.google.com/gsi/client'
-    script.async = true
-    script.defer = true
-    script.onload = () => resolve()
-    script.onerror = () => resolve()
-    document.head.appendChild(script)
-  })
-}
-
-type SignInStatus = 'idle' | 'verifying' | 'error'
-
-/**
- * Initialise Google Identity Services once on mount and expose a `signIn()`
- * that opens Google's native account chooser (One Tap) directly — no
- * intermediate modal with a button inside it. When Google fires the
- * credential callback we switch to `verifying` so the caller can show a
- * spinner while we exchange the token on the server.
- */
-function useGoogleSignIn(onSignedIn: (email: string) => void) {
-  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
-  const [status, setStatus] = useState<SignInStatus>('idle')
-  const [error, setError] = useState('')
-  const [hint, setHint] = useState('Verifying your Google account…')
-
-  // Refs so the GIS callback (registered once) always sees the latest values.
-  const onSignedInRef = useRef(onSignedIn)
-  onSignedInRef.current = onSignedIn
-  const statusRef = useRef<SignInStatus>('idle')
-  statusRef.current = status
-
-  // The GIS callback — registered once on mount, fires when Google hands us
-  // a credential (either via prompt() or via the fallback button).
-  const gisCallback = useCallback(async (resp: { credential?: string }) => {
-    const idToken = resp.credential
-    if (!idToken) {
-      setStatus('error')
-      setError('Google did not return a credential. Try again.')
-      return
-    }
-    setStatus('verifying')
-    setHint('Verifying your Google account…')
-    try {
-      const r = await fetch('/api/auth/callback', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id_token: idToken }),
-      })
-      if (!r.ok) {
-        const detail = await r.json().catch(() => ({ detail: 'Sign-in failed.' }))
-        setStatus('error')
-        setError(typeof detail.detail === 'string' ? detail.detail : 'Sign-in failed.')
-        return
-      }
-      setHint('Issuing your Polaris API key…')
-      const data = (await r.json()) as { email: string }
-      onSignedInRef.current(data.email)
-      setStatus('idle')
-    } catch {
-      setStatus('error')
-      setError('Could not reach the Polaris API. Check your connection and try again.')
-    }
-  }, [])
-
-  // Load GIS script + initialize once on mount.
-  const readyRef = useRef(false)
-  useEffect(() => {
-    if (!clientId) return
-    let cancelled = false
-    const init = () => {
-      if (cancelled || !window.google?.accounts?.id || readyRef.current) return
-      readyRef.current = true
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: gisCallback,
-      })
-    }
-    if (window.google?.accounts?.id) init()
-    else loadGoogleIdentity().then(init)
-    return () => { cancelled = true }
-  }, [clientId, gisCallback])
-
-  // Called by every Sign-in button — opens Google's native account chooser.
-  const signIn = useCallback(() => {
-    if (!window.google?.accounts?.id) {
-      loadGoogleIdentity().then(() => {
-        window.google?.accounts?.id.prompt()
-      })
-      return
-    }
-    // prompt() opens Google's One Tap / account chooser directly.
-    window.google.accounts.id.prompt()
-  }, [])
-
-  const retry = useCallback(() => {
-    setStatus('idle')
-    setError('')
-    // Re-trigger the Google picker.
-    setTimeout(() => signIn(), 50)
-  }, [signIn])
-
-  const dismiss = useCallback(() => {
-    setStatus('idle')
-    setError('')
-  }, [])
-
-  return { status, error, hint, signIn, retry, dismiss }
-}
-
-/**
- * Full-screen overlay shown only while we're exchanging the Google credential
- * for a Polaris API key (verifying) or when that exchange failed (error).
- * The "pick" step is gone — Google's own picker handles that now.
- */
-function SignInOverlay({
-  status,
-  error,
-  hint,
-  onRetry,
-  onDismiss,
-}: {
-  status: SignInStatus
-  error: string
-  hint: string
-  onRetry: () => void
-  onDismiss: () => void
-}) {
-  // Close on Escape (only when not verifying).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && status !== 'verifying') onDismiss()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [status, onDismiss])
-
-  if (status === 'idle') return null
-
-  return (
-    <AnimatePresence>
-      <motion.div
-        className="polaris-modal-overlay"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.18 }}
-        onClick={() => status !== 'verifying' && onDismiss()}
-      >
-        <motion.div
-          className="polaris-modal-card"
-          initial={{ opacity: 0, y: 16, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 8, scale: 0.98 }}
-          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-          onClick={(e) => e.stopPropagation()}
-          role="dialog"
-          aria-modal="true"
-          aria-label="Signing in to Polaris"
-        >
-          {status === 'verifying' && (
-            <div className="flex flex-col items-center text-center">
-              <div className="polaris-spinner" role="status" aria-live="polite" />
-              <h2 className="mt-6 font-display text-xl font-medium tracking-tight text-text">
-                Signing you in
-              </h2>
-              <motion.p
-                key={hint}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.25 }}
-                className="mt-2 font-mono text-[12px] tracking-wide text-blue"
-              >
-                {hint}
-              </motion.p>
-              <p className="mt-5 max-w-[34ch] text-xs leading-relaxed text-text4">
-                Hang tight — this usually takes a second.
-              </p>
-            </div>
-          )}
-
-          {status === 'error' && (
-            <div className="flex flex-col items-center text-center">
-              <button
-                type="button"
-                onClick={onDismiss}
-                aria-label="Close"
-                className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-full text-text4 transition hover:bg-surface-blue hover:text-text"
-              >
-                ×
-              </button>
-              <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-text4">Sign-in failed</span>
-              <h2 className="mt-3 font-display text-xl font-medium tracking-tight text-text">
-                We couldn&rsquo;t sign you in
-              </h2>
-              <p className="mt-2 max-w-[36ch] text-sm leading-relaxed text-text3">{error}</p>
-              <button
-                type="button"
-                onClick={onRetry}
-                className="btn-sheen mt-7 inline-flex h-10 items-center rounded-[10px] bg-blue px-5 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5"
-              >
-                Try again
-              </button>
-            </div>
-          )}
-        </motion.div>
-      </motion.div>
-    </AnimatePresence>
-  )
-}
-
-/*  Rotating hero feature text  */
-
+/* Rotating hero feature text */
 const HERO_FEATURES = [
   'Read the paper. Trace the evidence.',
   'Plan the build. Run the proof.',
@@ -395,8 +116,7 @@ function RotatingHero() {
   )
 }
 
-/*  Agents  */
-
+/* Agents */
 const agents = [
   {
     label: 'READ',
@@ -474,9 +194,7 @@ function HowSection() {
   const { scrollYProgress } = useScroll({ target: scrollRef, offset: ['start start', 'end end'] })
   const [activeIdx, setActiveIdx] = useState(0)
 
-  // Cards slide up: 4 cards stacked, translate from 0% to -75% (3/4 of total height).
   const cardY = useTransform(scrollYProgress, [0, 1], ['0%', '-75%'])
-  // Progress bar width.
   const progressWidth = useTransform(scrollYProgress, [0, 1], ['0%', '100%'])
 
   useMotionValueEvent(scrollYProgress, 'change', (v) => {
@@ -484,8 +202,14 @@ function HowSection() {
   })
 
   return (
-    <section id="how" className="relative bg-surface-alt">
-      {/* Heading — normal flow above the sticky scroll zone */}
+    <section
+      id="how"
+      className="relative rounded-t-[2.5rem]"
+      style={{
+        background:
+          'radial-gradient(ellipse 100% 80% at 10% 20%, rgba(5,98,239,0.18) 0%, transparent 50%), radial-gradient(ellipse 90% 70% at 90% 30%, rgba(245,166,35,0.14) 0%, transparent 50%), radial-gradient(ellipse 80% 60% at 50% 80%, rgba(40,200,64,0.12) 0%, transparent 50%), #fafafa',
+      }}
+    >
       <div className="px-6 pt-28 pb-16">
         <div className="mx-auto w-full max-w-[1200px]">
           <Reveal>
@@ -493,23 +217,21 @@ function HowSection() {
               One paper. Four moves.
             </p>
             <h2 className="max-w-[16ch] font-display text-[clamp(2rem,4.5vw,3.5rem)] leading-[1.02] font-medium tracking-[-0.03em]">
-              From “I should read this” <span className="text-text3">to “it actually works.”</span>
+              From &ldquo;I should read this&rdquo; <span className="text-text3">to &ldquo;it actually works.&rdquo;</span>
             </h2>
             <p className="mt-5 max-w-[34rem] text-[15px] leading-relaxed text-text3">
               Scroll through each agent to see what it does. The terminal on the right shows live output
-              for the agent you’re viewing.
+              for the agent you&rsquo;re viewing.
             </p>
           </Reveal>
         </div>
       </div>
 
-      {/* Scroll-driven card stack + static terminal */}
       <div ref={scrollRef} className="relative h-[400vh]">
         <div className="sticky top-0 flex h-screen items-center overflow-hidden">
           <div className="mx-auto w-full max-w-[1200px] px-6">
             <div className="grid gap-8 lg:grid-cols-[1.3fr_1fr] lg:items-center">
-              {/* Left: vertical card window */}
-              <div className="relative h-[460px] overflow-hidden rounded-3xl">
+              <div className="relative h-[460px] overflow-hidden rounded-3xl bg-white/40 backdrop-blur-sm ring-1 ring-white/50">
                 <motion.div style={{ y: cardY }} className="flex flex-col">
                   {agents.map((agent, i) => (
                     <div key={agent.label} className="h-[460px] shrink-0 p-1">
@@ -517,22 +239,17 @@ function HowSection() {
                     </div>
                   ))}
                 </motion.div>
-                {/* Fade edges for smooth card transitions */}
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-surface-alt to-transparent" />
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-surface-alt to-transparent" />
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-8 bg-gradient-to-b from-white/60 to-transparent" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-white/60 to-transparent" />
               </div>
 
-              {/* Right: static terminal + progress */}
               <div className="flex flex-col gap-4">
                 <div className="flex items-center gap-3">
                   <span className="font-mono text-[11px] uppercase tracking-[0.16em] text-text4">
                     Agent {activeIdx + 1} of 4
                   </span>
                   <div className="h-1 flex-1 overflow-hidden rounded-full bg-border">
-                    <motion.div
-                      style={{ width: progressWidth }}
-                      className="h-full rounded-full bg-blue"
-                    />
+                    <motion.div style={{ width: progressWidth }} className="h-full rounded-full bg-blue" />
                   </div>
                 </div>
                 <Terminal agent={agents[activeIdx]} />
@@ -605,8 +322,7 @@ function Terminal({ agent }: { agent: (typeof agents)[number] }) {
   )
 }
 
-/*  Razorpay checkout  */
-
+/* Razorpay checkout */
 function loadRazorpay(): Promise<boolean> {
   if (window.Razorpay) return Promise.resolve(true)
   return new Promise((resolve) => {
@@ -705,86 +421,7 @@ async function startCheckout(plan: PlanId, onError: (msg: string) => void) {
   rzp.open()
 }
 
-/*  Header  */
-
-function Header({
-  authed,
-  email,
-  onSignIn,
-  onSignOut,
-}: {
-  authed: boolean
-  email: string | null
-  onSignIn: () => void
-  onSignOut: () => void
-}) {
-  const [scrolled, setScrolled] = useState(false)
-  useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 20)
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
-  return (
-    <motion.header
-      initial={{ y: -24, opacity: 0 }}
-      animate={{ y: 0, opacity: 1 }}
-      transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-      className={[
-        'fixed top-4 left-1/2 z-50 flex w-[min(1200px,calc(100%-2rem))] -translate-x-1/2 items-center justify-between rounded-2xl border px-6 transition-colors duration-300',
-        scrolled
-          ? 'border-border-strong bg-white/85 py-3 shadow-md backdrop-blur-xl'
-          : 'border-transparent bg-transparent py-5',
-      ].join(' ')}
-    >
-      <a href="/" className="logo-sheen inline-flex items-center gap-2.5 font-display text-lg font-semibold tracking-tight text-text">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/logo.png" alt="" className="h-6 w-6 rounded-md" />
-        <span>Polaris</span>
-      </a>
-      <nav className="hidden items-center gap-7 text-sm font-medium text-text3 sm:flex">
-        <a href="#pricing" className="transition hover:text-blue">Pricing</a>
-        <a href="#how" className="transition hover:text-blue">How it works</a>
-      </nav>
-      <div className="flex items-center gap-3">
-        <a
-          href="#pricing"
-          className="btn-sheen hidden h-10 items-center rounded-[10px] bg-blue px-5 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(5,98,239,0.28)] sm:inline-flex"
-        >
-          Get started
-        </a>
-        {authed ? (
-          <div className="flex items-center gap-3">
-            <a
-              href="/account"
-              className="hidden max-w-[18ch] truncate font-mono text-[11px] text-text3 transition hover:text-blue sm:inline"
-            >
-              {email}
-            </a>
-            <button
-              type="button"
-              onClick={onSignOut}
-              className="inline-flex h-10 items-center rounded-[10px] border border-border-strong bg-white px-5 text-xs font-bold text-text3 transition hover:border-blue hover:text-text"
-            >
-              Sign out
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={onSignIn}
-            className="btn-sheen inline-flex h-10 items-center rounded-[10px] bg-blue px-5 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(5,98,239,0.28)]"
-          >
-            Sign in
-          </button>
-        )}
-      </div>
-    </motion.header>
-  )
-}
-
-/*  Pricing  */
-
+/* Pricing */
 const plans: {
   id: PlanId
   name: string
@@ -828,8 +465,6 @@ const plans: {
   },
 ]
 
-/*  Landing  */
-
 function SectionCTA({ href, onClick, children, primary = true, type = 'link' }: {
   href?: string
   onClick?: () => void
@@ -847,16 +482,47 @@ function SectionCTA({ href, onClick, children, primary = true, type = 'link' }: 
   )
 }
 
-export function Landing({ authed, email }: { authed: boolean; email: string | null }) {
+/* Logout thank-you toast */
+function ThanksToast() {
+  const [visible, setVisible] = useState(true)
+  if (!visible) return null
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -12 }}
+      className="fixed top-24 left-1/2 z-[60] w-[min(400px,calc(100%-2rem))] -translate-x-1/2 rounded-xl border border-border-strong bg-white px-5 py-3 shadow-lg"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-text">Thanks for visiting Polaris. See you soon.</p>
+        <button
+          type="button"
+          onClick={() => setVisible(false)}
+          className="grid h-6 w-6 place-items-center rounded-full text-text4 transition hover:bg-surface-blue hover:text-text"
+          aria-label="Dismiss"
+        >
+          ×
+        </button>
+      </div>
+    </motion.div>
+  )
+}
+
+export function Landing({ authed, email, name }: { authed: boolean; email: string | null; name?: string | null }) {
+  const searchParams = useSearchParams()
+  const showThanks = searchParams.get('thanks') === '1'
+
   const [payError, setPayError] = useState('')
   const [paying, setPaying] = useState<PlanId | null>(null)
   const [authedState, setAuthed] = useState(authed)
   const [emailState, setEmail] = useState(email)
+  const [nameState, setName] = useState(name)
 
   useEffect(() => {
     setAuthed(authed)
     setEmail(email)
-  }, [authed, email])
+    setName(name)
+  }, [authed, email, name])
 
   const onSignedIn = useCallback((signedInEmail: string) => {
     setAuthed(true)
@@ -873,6 +539,7 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
     }
     setAuthed(false)
     setEmail(null)
+    setName(null)
   }, [])
 
   const onPay = useCallback(async (plan: PlanId) => {
@@ -889,45 +556,31 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
 
   return (
     <div className="relative overflow-x-clip bg-bg text-text">
-      <Header authed={authedState} email={emailState} onSignIn={signIn} onSignOut={onSignOut} />
+      {showThanks && <ThanksToast />}
+      <Header authed={authedState} email={emailState} name={nameState} onSignIn={signIn} />
       <ScrollLine />
       <SignInOverlay status={status} error={error} hint={hint} onRetry={retry} onDismiss={dismiss} />
 
-      <section className="relative z-10 flex min-h-screen flex-col items-start justify-center bg-bg px-6 pt-28 pb-20">
+      <section
+        className="relative z-10 flex min-h-screen flex-col items-start justify-center px-6 pt-28 pb-20"
+        style={{
+          background:
+            'radial-gradient(ellipse 90% 70% at 20% 30%, rgba(5,98,239,0.16) 0%, transparent 55%), radial-gradient(ellipse 80% 60% at 80% 80%, rgba(245,166,35,0.14) 0%, transparent 50%), radial-gradient(ellipse 70% 50% at 50% 90%, rgba(40,200,64,0.10) 0%, transparent 50%), #ffffff',
+        }}
+      >
         <div className="relative z-20 mx-auto w-full max-w-[1120px]">
           <Reveal>
             <RotatingHero />
-            <h1 className="mt-6 max-w-[18ch] font-display text-[clamp(2.75rem,6.5vw,5.4rem)] leading-[0.94] font-medium tracking-[-0.04em] text-text">
+            <h1 className="mt-6 w-full max-w-[18ch] font-display text-[clamp(2rem,7vw,5.4rem)] leading-[0.98] font-medium tracking-[-0.03em] text-text sm:leading-[0.94] sm:tracking-[-0.04em]">
               Never feel lost in a paper <em className="not-italic text-blue">ever again.</em>
             </h1>
-            <p className="mt-7 max-w-[34rem] text-lg leading-relaxed text-text3">
+            <p className="mt-7 max-w-[34rem] text-base leading-relaxed text-text3 sm:text-lg">
               Polaris reads the paper, traces the evidence, plans the build, and writes the code —
               every paper you open becomes something you can run.
             </p>
-            <div className="mt-10 flex flex-wrap items-center gap-4">
-              {!authedState ? (
-                <div className="flex items-center gap-4">
-                  <button
-                    type="button"
-                    onClick={signIn}
-                    className="btn-sheen inline-flex h-12 items-center gap-2 rounded-xl bg-blue px-6 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(5,98,239,0.3)]"
-                  >
-                    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
-                      <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.17-1.84H9v3.49h4.84a4.14 4.14 0 0 1-1.79 2.71v2.26h2.9a8.77 8.77 0 0 0 2.69-6.62z"/>
-                      <path fill="#34A853" d="M9 18c2.43 0 4.47-.81 5.96-2.18l-2.9-2.26c-.8.54-1.83.86-3.06.86-2.35 0-4.34-1.59-5.05-3.73H.96v2.32A9 9 0 0 0 9 18z"/>
-                      <path fill="#FBBC05" d="M3.95 10.69A5.4 5.4 0 0 1 3.65 9c0-.59.1-1.16.3-1.69V4.99H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.01l2.99-2.32z"/>
-                      <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59A8.99 8.99 0 0 0 .96 4.99l2.99 2.32C4.66 5.17 6.65 3.58 9 3.58z"/>
-                    </svg>
-                    Sign in with Google
-                  </button>
-                  <SectionCTA href="#pricing" primary={false}>Get started</SectionCTA>
-                </div>
-              ) : (
-                <>
-                  <SectionCTA href="/account">View account</SectionCTA>
-                  <SectionCTA href="#how" primary={false}>See how it works</SectionCTA>
-                </>
-              )}
+            <div className="mt-10 flex flex-wrap items-center gap-3 sm:gap-4">
+              <SectionCTA href="/code">Get started</SectionCTA>
+              <SectionCTA href="/#how" primary={false}>How it works</SectionCTA>
             </div>
           </Reveal>
         </div>
@@ -935,7 +588,21 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
 
       <HowSection />
 
-      <section id="pricing" className="relative z-10 flex min-h-screen flex-col justify-center bg-surface-blue px-6 py-28">
+      <section
+        id="pricing"
+        className="relative z-10 flex min-h-screen flex-col justify-center px-6 py-28"
+        style={{
+          background:
+            'radial-gradient(ellipse 110% 80% at 20% 20%, rgba(5,98,239,0.18) 0%, transparent 50%), radial-gradient(ellipse 90% 70% at 80% 80%, rgba(245,166,35,0.14) 0%, transparent 50%), radial-gradient(ellipse 80% 60% at 50% 50%, rgba(40,200,64,0.10) 0%, transparent 50%), #f4f8ff',
+        }}
+      >
+        {/* White mask at the bottom of pricing to separate from the rounded footer */}
+        <div
+          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-32"
+          style={{
+            background: 'linear-gradient(to bottom, transparent 0%, #ffffff 85%)',
+          }}
+        />
         <div className="relative z-20 mx-auto w-full max-w-[1200px]">
           <Reveal>
             <p className="mb-4 font-mono text-[11px] font-medium tracking-[0.16em] text-blue uppercase">
@@ -1011,17 +678,7 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
         </div>
       </section>
 
-      <footer className="relative z-10 border-t border-border bg-bg px-6 py-24">
-        <div className="relative z-20 mx-auto flex w-full max-w-[1200px] flex-col items-center gap-10">
-          <PolarisWordmark />
-          <div className="flex flex-wrap items-center justify-center gap-8 font-mono text-xs text-text3">
-            <a href="https://github.com" className="transition hover:text-blue" target="_blank" rel="noreferrer">GitHub</a>
-            <a href="https://twitter.com" className="transition hover:text-blue" target="_blank" rel="noreferrer">Twitter</a>
-            <a href="https://linkedin.com" className="transition hover:text-blue" target="_blank" rel="noreferrer">LinkedIn</a>
-          </div>
-          <span className="font-mono text-xs text-text4">© 2026 Polaris AI</span>
-        </div>
-      </footer>
+      <Footer />
     </div>
   )
 }
