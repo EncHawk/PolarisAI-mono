@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from app.auth.google import verify_google_id_token
 from app.auth.passwords import hash_password, verify_password
-from app.auth.sessions import current_user, generate_api_key
+from app.auth.sessions import (
+    clear_session_cookie,
+    current_user,
+    generate_api_key,
+    set_session_cookie,
+)
 from app.cache import get_cache
 from app.config import get_settings
 from app.logging_utils import log_step, log_timer, POLARIS_LOGGER
@@ -64,7 +69,7 @@ def _upsert_oauth_user(email: str, username: str | None,
 
 @router.post("/signup", response_model=AuthOut)
 @limiter.limit(get_settings().RATELIMIT_AUTH)
-async def signup(body: SignupIn, request: Request):
+async def signup(body: SignupIn, request: Request, response: Response):
     t0 = time.perf_counter()
     email = body.email.strip().lower()
     log_step("auth.signup.start", f"email={email}")
@@ -90,12 +95,14 @@ async def signup(body: SignupIn, request: Request):
     user = inserted[0] if inserted else row
     get_cache()[f"user_exists:{email}"] = user["id"]
     log_step("auth.signup.done", f"email={email} | id={user['id']} | {(time.perf_counter()-t0)*1000:.1f}ms")
-    return _auth_out(user, api_key)
+    out = _auth_out(user, api_key)
+    set_session_cookie(response, api_key)
+    return out
 
 
 @router.post("/login", response_model=AuthOut)
 @limiter.limit(get_settings().RATELIMIT_AUTH)
-async def login(body: LoginIn, request: Request):
+async def login(body: LoginIn, request: Request, response: Response):
     t0 = time.perf_counter()
     email = body.email.strip().lower()
     log_step("auth.login.start", f"email={email}")
@@ -115,12 +122,14 @@ async def login(body: LoginIn, request: Request):
     api_key = generate_api_key()
     db.table("users").update({"api_key": api_key}).eq("id", user["id"]).execute()
     log_step("auth.login.done", f"email={email} | id={user['id']} | {(time.perf_counter()-t0)*1000:.1f}ms")
-    return _auth_out(user, api_key)
+    out = _auth_out(user, api_key)
+    set_session_cookie(response, api_key)
+    return out
 
 
 @router.post("/google", response_model=AuthOut)
 @limiter.limit(get_settings().RATELIMIT_AUTH)
-async def google_login(body: GoogleLoginIn, request: Request):
+async def google_login(body: GoogleLoginIn, request: Request, response: Response):
     t0 = time.perf_counter()
     log_step("auth.google.start", f"id_token_len={len(body.id_token)}")
     profile = verify_google_id_token(body.id_token)
@@ -130,7 +139,9 @@ async def google_login(body: GoogleLoginIn, request: Request):
     db = get_supabase()
     db.table("users").update({"api_key": api_key}).eq("id", user["id"]).execute()
     log_step("auth.google.done", f"email={profile.email} | id={user['id']} | {(time.perf_counter()-t0)*1000:.1f}ms")
-    return _auth_out(user, api_key)
+    out = _auth_out(user, api_key)
+    set_session_cookie(response, api_key)
+    return out
 
 
 @router.get("/me", response_model=UserOut)
@@ -146,10 +157,12 @@ async def me(user: dict = Depends(current_user)):
 
 
 @router.post("/logout")
-async def logout(user: dict = Depends(current_user)):
+async def logout(user: dict = Depends(current_user), response: Response = None):
     t0 = time.perf_counter()
     log_step("auth.logout.start", f"user_id={user['sub']}")
     db = get_supabase()
     db.table("users").update({"api_key": None}).eq("id", user["sub"]).execute()
+    if response is not None:
+        clear_session_cookie(response)
     log_step("auth.logout.done", f"user_id={user['sub']} | {(time.perf_counter()-t0)*1000:.1f}ms")
     return {"ok": True}

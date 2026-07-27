@@ -1,10 +1,11 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
 
-const backendTarget = process.env.VITE_API_PROXY_TARGET ?? 'https://polarisai-mono.fastapicloud.dev/'
+const backendTarget = process.env.VITE_API_PROXY_TARGET ?? 'https://polarisai.gleeze.com/'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
   server: {
     proxy: {
       '/auth': { target: backendTarget, changeOrigin: true },

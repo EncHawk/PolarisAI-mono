@@ -91,7 +91,7 @@ class PaymentWebhookIn(BaseModel):
 
 
 class RazorpayCheckoutIn(BaseModel):
-    plan: Literal["starter", "pro"] = "starter"
+    plan: Literal["starter", "pro", "lab"] = "starter"
     job_uuid: str | None = None
 
 
@@ -99,7 +99,7 @@ class RazorpayVerifyIn(BaseModel):
     order_id: str
     payment_id: str
     razorpay_signature: str
-    plan: Literal["starter", "pro"] = "starter"
+    plan: Literal["starter", "pro", "lab"] = "starter"
     job_uuid: str | None = None
 
 

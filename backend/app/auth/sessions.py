@@ -1,23 +1,40 @@
-"""API-key based session management.
+"""OAuth 2 Bearer-token session management.
 
-- Every request carries the key in the X-API-Key header.
-- SSE (EventSource) cannot set headers, so it falls back to an ?api_key= query param.
-- The key is a UUID stored on the users table. Login regenerates it; logout wipes it.
-- The returned user dict maps `id` → `sub` so existing routes keep using user["sub"].
+- Authenticated requests carry the token in the standard
+  `Authorization: Bearer <token>` header (RFC 6750).
+- For SSE (EventSource cannot set headers), the token may also be passed
+  via the `?api_key=` query param — kept for backward compatibility.
+- After login/google/verify flows, the backend also sets an `Authorization`
+  httpOnly cookie so browser fetches with `credentials: 'include'` work
+  without JS having to touch the token (OAuth 2 BCP — no localStorage).
+- The token is a UUID stored on the users table; login regenerates it,
+  logout wipes it.
 """
 from __future__ import annotations
 
 import uuid
 
-from fastapi import Header, HTTPException, Query, status
+from fastapi import Cookie, Header, HTTPException, Query, status
 
+from app.config import get_settings
 from app.store.supabase import get_supabase
 
 API_KEY_HEADER = "X-API-Key"
+BEARER_HEADER = "Authorization"
+SESSION_COOKIE = "polaris_session"
 
 
 def generate_api_key() -> str:
     return str(uuid.uuid4())
+
+
+def _extract_bearer(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    parts = authorization.split(" ", 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer" and parts[1].strip():
+        return parts[1].strip()
+    return None
 
 
 def verify_api_key(api_key: str | None) -> dict:
@@ -47,18 +64,24 @@ def verify_api_key(api_key: str | None) -> dict:
 
 
 def current_user(
-    api_key: str | None = Header(default=None, alias=API_KEY_HEADER),
+    authorization: str | None = Header(default=None, alias=BEARER_HEADER),
+    x_api_key: str | None = Header(default=None, alias=API_KEY_HEADER),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict:
-    return verify_api_key(api_key)
+    token = _extract_bearer(authorization) or x_api_key or session_cookie
+    return verify_api_key(token)
 
 
 async def current_user_optional(
-    api_key: str | None = Header(default=None, alias=API_KEY_HEADER),
+    authorization: str | None = Header(default=None, alias=BEARER_HEADER),
+    x_api_key: str | None = Header(default=None, alias=API_KEY_HEADER),
+    session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE),
 ) -> dict | None:
-    if not api_key:
+    token = _extract_bearer(authorization) or x_api_key or session_cookie
+    if not token:
         return None
     try:
-        return verify_api_key(api_key)
+        return verify_api_key(token)
     except HTTPException:
         return None
 
@@ -66,8 +89,27 @@ async def current_user_optional(
 def current_user_sse(
     api_key: str | None = Query(default=None, alias="api_key"),
     x_api_key: str | None = Header(default=None, alias=API_KEY_HEADER),
+    authorization: str | None = Header(default=None, alias=BEARER_HEADER),
 ) -> dict:
-    return verify_api_key(x_api_key or api_key)
+    token = _extract_bearer(authorization) or x_api_key or api_key
+    return verify_api_key(token)
+
+
+def set_session_cookie(response, api_key: str) -> None:
+    """Attach an httpOnly, SameSite=Lax session cookie (OAuth 2 BCP)."""
+    response.set_cookie(
+        key=SESSION_COOKIE,
+        value=api_key,
+        httponly=True,
+        secure=not get_settings().is_dev,
+        samesite="lax",
+        max_age=get_settings().SESSION_TTL_SECONDS,
+        path="/",
+    )
+
+
+def clear_session_cookie(response) -> None:
+    response.delete_cookie(key=SESSION_COOKIE, path="/")
 
 
 def require_credits(user: dict, cost: int = 1) -> None:
