@@ -17,6 +17,7 @@ declare global {
             client_id: string
             callback: (response: { credential?: string }) => void
           }) => void
+          prompt: () => void
           renderButton: (
             parent: HTMLElement,
             options: {
@@ -143,7 +144,7 @@ function PolarisWordmark() {
   )
 }
 
-/*  Google Identity Services login — modal flow  */
+/*  Google Identity Services — direct prompt flow  */
 
 function loadGoogleIdentity(): Promise<void> {
   if (window.google?.accounts?.id) return Promise.resolve()
@@ -158,98 +159,133 @@ function loadGoogleIdentity(): Promise<void> {
   })
 }
 
-type SignInStep = 'pick' | 'verifying' | 'error'
+type SignInStatus = 'idle' | 'verifying' | 'error'
 
-function SignInModal({
-  open,
-  onClose,
-  onSignedIn,
-}: {
-  open: boolean
-  onClose: () => void
-  onSignedIn: (email: string) => void
-}) {
-  const btnRef = useRef<HTMLDivElement | null>(null)
-  const [step, setStep] = useState<SignInStep>('pick')
-  const [error, setError] = useState('')
-  const [hint, setHint] = useState('Closing Google picker…')
+/**
+ * Initialise Google Identity Services once on mount and expose a `signIn()`
+ * that opens Google's native account chooser (One Tap) directly — no
+ * intermediate modal with a button inside it. When Google fires the
+ * credential callback we switch to `verifying` so the caller can show a
+ * spinner while we exchange the token on the server.
+ */
+function useGoogleSignIn(onSignedIn: (email: string) => void) {
   const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
+  const [status, setStatus] = useState<SignInStatus>('idle')
+  const [error, setError] = useState('')
+  const [hint, setHint] = useState('Verifying your Google account…')
 
-  // Reset to the picker step every time the modal opens.
-  useEffect(() => {
-    if (!open) return
-    setStep('pick')
-    setError('')
-  }, [open])
+  // Refs so the GIS callback (registered once) always sees the latest values.
+  const onSignedInRef = useRef(onSignedIn)
+  onSignedInRef.current = onSignedIn
+  const statusRef = useRef<SignInStatus>('idle')
+  statusRef.current = status
 
-  // Render the Google Identity Services pill into btnRef once per open.
+  // The GIS callback — registered once on mount, fires when Google hands us
+  // a credential (either via prompt() or via the fallback button).
+  const gisCallback = useCallback(async (resp: { credential?: string }) => {
+    const idToken = resp.credential
+    if (!idToken) {
+      setStatus('error')
+      setError('Google did not return a credential. Try again.')
+      return
+    }
+    setStatus('verifying')
+    setHint('Verifying your Google account…')
+    try {
+      const r = await fetch('/api/auth/callback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id_token: idToken }),
+      })
+      if (!r.ok) {
+        const detail = await r.json().catch(() => ({ detail: 'Sign-in failed.' }))
+        setStatus('error')
+        setError(typeof detail.detail === 'string' ? detail.detail : 'Sign-in failed.')
+        return
+      }
+      setHint('Issuing your Polaris API key…')
+      const data = (await r.json()) as { email: string }
+      onSignedInRef.current(data.email)
+      setStatus('idle')
+    } catch {
+      setStatus('error')
+      setError('Could not reach the Polaris API. Check your connection and try again.')
+    }
+  }, [])
+
+  // Load GIS script + initialize once on mount.
+  const readyRef = useRef(false)
   useEffect(() => {
-    if (!open || !clientId) return
+    if (!clientId) return
     let cancelled = false
-    const render = () => {
-      if (cancelled || !window.google?.accounts?.id || !btnRef.current) return
+    const init = () => {
+      if (cancelled || !window.google?.accounts?.id || readyRef.current) return
+      readyRef.current = true
       window.google.accounts.id.initialize({
         client_id: clientId,
-        callback: async (resp: { credential?: string }) => {
-          const idToken = resp.credential
-          if (!idToken) {
-            setStep('error')
-            setError('Google did not return a credential. Try again.')
-            return
-          }
-          // Google picker closed → switch to the blue loading state immediately
-          // so the user sees we're working on their sign-in.
-          setStep('verifying')
-          setHint('Verifying your Google account…')
-          try {
-            const r = await fetch('/api/auth/callback', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id_token: idToken }),
-            })
-            if (!r.ok) {
-              const detail = await r.json().catch(() => ({ detail: 'Sign-in failed.' }))
-              setStep('error')
-              setError(typeof detail.detail === 'string' ? detail.detail : 'Sign-in failed.')
-              return
-            }
-            setHint('Issuing your Polaris API key…')
-            const data = (await r.json()) as { email: string }
-            onSignedIn(data.email)
-            onClose()
-          } catch {
-            setStep('error')
-            setError('Could not reach the Polaris API. Check your connection and try again.')
-          }
-        },
-      })
-      window.google.accounts.id.renderButton(btnRef.current, {
-        type: 'standard',
-        size: 'large',
-        text: 'signin_with',
-        shape: 'pill',
-        theme: 'outline',
-        width: 280,
+        callback: gisCallback,
       })
     }
-    if (window.google?.accounts?.id) render()
-    else loadGoogleIdentity().then(render)
-    return () => {
-      cancelled = true
-    }
-  }, [open, clientId, onSignedIn, onClose])
+    if (window.google?.accounts?.id) init()
+    else loadGoogleIdentity().then(init)
+    return () => { cancelled = true }
+  }, [clientId, gisCallback])
 
-  // Close on Escape.
+  // Called by every Sign-in button — opens Google's native account chooser.
+  const signIn = useCallback(() => {
+    if (!window.google?.accounts?.id) {
+      loadGoogleIdentity().then(() => {
+        window.google?.accounts?.id.prompt()
+      })
+      return
+    }
+    // prompt() opens Google's One Tap / account chooser directly.
+    window.google.accounts.id.prompt()
+  }, [])
+
+  const retry = useCallback(() => {
+    setStatus('idle')
+    setError('')
+    // Re-trigger the Google picker.
+    setTimeout(() => signIn(), 50)
+  }, [signIn])
+
+  const dismiss = useCallback(() => {
+    setStatus('idle')
+    setError('')
+  }, [])
+
+  return { status, error, hint, signIn, retry, dismiss }
+}
+
+/**
+ * Full-screen overlay shown only while we're exchanging the Google credential
+ * for a Polaris API key (verifying) or when that exchange failed (error).
+ * The "pick" step is gone — Google's own picker handles that now.
+ */
+function SignInOverlay({
+  status,
+  error,
+  hint,
+  onRetry,
+  onDismiss,
+}: {
+  status: SignInStatus
+  error: string
+  hint: string
+  onRetry: () => void
+  onDismiss: () => void
+}) {
+  // Close on Escape (only when not verifying).
   useEffect(() => {
-    if (!open) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && step !== 'verifying') onClose()
+      if (e.key === 'Escape' && status !== 'verifying') onDismiss()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, step, onClose])
+  }, [status, onDismiss])
 
-  if (!open) return null
+  if (status === 'idle') return null
 
   return (
     <AnimatePresence>
@@ -259,7 +295,7 @@ function SignInModal({
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.18 }}
-        onClick={() => step !== 'verifying' && onClose()}
+        onClick={() => status !== 'verifying' && onDismiss()}
       >
         <motion.div
           className="polaris-modal-card"
@@ -270,37 +306,9 @@ function SignInModal({
           onClick={(e) => e.stopPropagation()}
           role="dialog"
           aria-modal="true"
-          aria-label="Sign in to Polaris"
+          aria-label="Signing in to Polaris"
         >
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={step === 'verifying'}
-            aria-label="Close sign-in"
-            className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-full text-text4 transition hover:bg-surface-blue hover:text-text disabled:opacity-40"
-          >
-            ×
-          </button>
-
-          {step === 'pick' && (
-            <div className="flex flex-col items-center text-center">
-              <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-blue">Sign in</span>
-              <h2 className="mt-3 font-display text-2xl font-medium tracking-tight text-text">
-                Sign in to Polaris
-              </h2>
-              <p className="mt-2 max-w-[34ch] text-sm leading-relaxed text-text3">
-                Use your Google account. We verify it once, issue your API key, and never see Google again.
-              </p>
-              <div className="mt-7 flex min-h-[52px] items-center justify-center">
-                <div ref={btnRef} className="gis-wrap" aria-label="Sign in with Google" />
-              </div>
-              <p className="mt-5 font-mono text-[11px] text-text4">
-                By signing in you accept our terms. New accounts start with $3.00 in credits.
-              </p>
-            </div>
-          )}
-
-          {step === 'verifying' && (
+          {status === 'verifying' && (
             <div className="flex flex-col items-center text-center">
               <div className="polaris-spinner" role="status" aria-live="polite" />
               <h2 className="mt-6 font-display text-xl font-medium tracking-tight text-text">
@@ -321,16 +329,24 @@ function SignInModal({
             </div>
           )}
 
-          {step === 'error' && (
+          {status === 'error' && (
             <div className="flex flex-col items-center text-center">
+              <button
+                type="button"
+                onClick={onDismiss}
+                aria-label="Close"
+                className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-full text-text4 transition hover:bg-surface-blue hover:text-text"
+              >
+                ×
+              </button>
               <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-text4">Sign-in failed</span>
               <h2 className="mt-3 font-display text-xl font-medium tracking-tight text-text">
-                We couldn’t sign you in
+                We couldn&rsquo;t sign you in
               </h2>
               <p className="mt-2 max-w-[36ch] text-sm leading-relaxed text-text3">{error}</p>
               <button
                 type="button"
-                onClick={() => setStep('pick')}
+                onClick={onRetry}
                 className="btn-sheen mt-7 inline-flex h-10 items-center rounded-[10px] bg-blue px-5 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5"
               >
                 Try again
@@ -834,7 +850,6 @@ function SectionCTA({ href, onClick, children, primary = true, type = 'link' }: 
 export function Landing({ authed, email }: { authed: boolean; email: string | null }) {
   const [payError, setPayError] = useState('')
   const [paying, setPaying] = useState<PlanId | null>(null)
-  const [signInOpen, setSignInOpen] = useState(false)
   const [authedState, setAuthed] = useState(authed)
   const [emailState, setEmail] = useState(email)
 
@@ -846,8 +861,9 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
   const onSignedIn = useCallback((signedInEmail: string) => {
     setAuthed(true)
     setEmail(signedInEmail)
-    setSignInOpen(false)
   }, [])
+
+  const { status, error, hint, signIn, retry, dismiss } = useGoogleSignIn(onSignedIn)
 
   const onSignOut = useCallback(async () => {
     try {
@@ -873,9 +889,9 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
 
   return (
     <div className="relative overflow-x-clip bg-bg text-text">
-      <Header authed={authedState} email={emailState} onSignIn={() => setSignInOpen(true)} onSignOut={onSignOut} />
+      <Header authed={authedState} email={emailState} onSignIn={signIn} onSignOut={onSignOut} />
       <ScrollLine />
-      <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} onSignedIn={onSignedIn} />
+      <SignInOverlay status={status} error={error} hint={hint} onRetry={retry} onDismiss={dismiss} />
 
       <section className="relative z-10 flex min-h-screen flex-col items-start justify-center bg-bg px-6 pt-28 pb-20">
         <div className="relative z-20 mx-auto w-full max-w-[1120px]">
@@ -893,7 +909,7 @@ export function Landing({ authed, email }: { authed: boolean; email: string | nu
                 <div className="flex items-center gap-4">
                   <button
                     type="button"
-                    onClick={() => setSignInOpen(true)}
+                    onClick={signIn}
                     className="btn-sheen inline-flex h-12 items-center gap-2 rounded-xl bg-blue px-6 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(5,98,239,0.3)]"
                   >
                     <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
