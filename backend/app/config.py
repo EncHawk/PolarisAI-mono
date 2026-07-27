@@ -41,7 +41,10 @@ class Settings(BaseSettings):
     RAZORPAY_KEY_SECRET: str = ""
     RAZORPAY_WEBHOOK_SECRET: str = ""
 
-    REDIS_URL: str = "redis://localhost:6379/0"
+    # Upstash Redis REST (HTTPS, connectionless). Set both to use the managed
+    # Upstash database; the app no longer ships a local redis-py client.
+    UPSTASH_REDIS_REST_URL: str = ""
+    UPSTASH_REDIS_REST_TOKEN: str = ""
 
     INGEST_TOP_N_CITATIONS: int = 8
 

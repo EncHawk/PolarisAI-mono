@@ -25,7 +25,10 @@ class Settings(BaseSettings):
     # citation research and planning, but none can silently spin for 12 calls.
     AGENT_MAX_STEPS: int = 4
 
-    REDIS_URL: str = "redis://localhost:6379/0"
+    # Upstash Redis REST (HTTPS, connectionless). Set both to use the managed
+    # Upstash database; the worker no longer ships a local redis-py client.
+    UPSTASH_REDIS_REST_URL: str = ""
+    UPSTASH_REDIS_REST_TOKEN: str = ""
 
     # Backend endpoints for usage reporting. WORKER_SECRET matches the backend's
     # WORKER_SECRET and is sent on the X-Worker-Secret header.

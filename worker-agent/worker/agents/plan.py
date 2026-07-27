@@ -114,24 +114,16 @@ def run_plan(state: WorkerState) -> dict:
                conclusion="plan ready -- awaiting user approval",
                output_query=json.dumps(plan))
 
-    # dedicated blocking connection: no health checks / no socket timeout so an
-    # indefinite BLPOP never throws -- the worker just waits for the user.
+    # Block on user approval. The Upstash REST SDK is connectionless, so we
+    # poll the `polaris:plan_confirm:{uuid}` list via the shared RedisShim's
+    # blpop (which loops lpop internally) until the user approves/rejects.
     timer = state.get("timer")
     if timer:
         timer.approval_wait_start()
-    import redis as _redis
 
-    from worker.config import get_settings as _gs
-    block_redis = _redis.from_url(
-        _gs().REDIS_URL,
-        decode_responses=True,
-        socket_keepalive=True,
-        socket_connect_timeout=10,
-        socket_timeout=None,
-    )
+    from worker.store import get_redis as _get_redis
     key = redis_keys.PLAN_CONFIRM.format(job_uuid=job_uuid)
-    payload = block_redis.blpop(key, timeout=0)  # blocks until the user approves/rejects
-    block_redis.close()
+    payload = _get_redis().blpop(key, timeout=0)  # blocks until the user approves/rejects
     if not payload:
         if timer:
             timer.approval_received(False)
