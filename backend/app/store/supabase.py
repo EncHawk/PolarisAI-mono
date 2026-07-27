@@ -29,6 +29,20 @@ class _StubClient:
 
     def __init__(self) -> None:
         self._tables: dict[str, list[dict[str, Any]]] = {}
+        # Pre-populate a test user for local dev
+        self._tables["users"] = [{
+            "id": "11111111-1111-1111-1111-111111111111",
+            "email": "test@example.com",
+            "name": "Test User",
+            "username": "testuser",
+            "github": None,
+            "x": None,
+            "password_hash": None,
+            "credits": 10.0,
+            "api_key": "test-api-key-123",
+            "subscription_tier": None,
+            "renews_at": None,
+        }]
 
     def table(self, name: str) -> _StubTable:
         return _StubTable(self, name)

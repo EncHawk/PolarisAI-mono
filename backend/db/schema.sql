@@ -60,7 +60,6 @@ create table if not exists papers (
     arxiv_id    text,
     title       text,
     job_uuid    uuid unique not null,
-    markdown    text,
     status      text not null default 'queued',
     error       text,
     code_files  jsonb,

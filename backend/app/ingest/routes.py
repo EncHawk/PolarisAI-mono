@@ -7,6 +7,7 @@ import uuid as _u
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from app.auth.sessions import current_user, require_positive_balance
+from decimal import Decimal
 from app.config import get_settings
 from app.github import GitHubClient, GitHubUnavailable
 from app.ingest import arxiv
@@ -33,6 +34,7 @@ async def ingest(body: IngestIn, request: Request, user: dict = Depends(current_
     t0 = time.perf_counter()
     log_step("ingest.start", f"user_id={user['sub']} | arxiv={body.arxiv_url or body.arxiv_id or body.pdf_url}")
     require_positive_balance(user)
+    has_credits = (user.get("credits") or Decimal(0)) > 0
 
     t1 = time.perf_counter()
     try:
@@ -84,8 +86,7 @@ async def ingest(body: IngestIn, request: Request, user: dict = Depends(current_
         "arxiv_id": ref.arxiv_id,
         "job_uuid": job_uuid,
         "title": title,
-        "markdown": markdown,
-        "status": "awaiting_payment",
+        "status": "queued" if has_credits else "awaiting_payment",
     }).execute()
     log_step("ingest.db.papers", f"paper_id={paper_id} | {(time.perf_counter()-t1)*1000:.1f}ms")
 
@@ -98,7 +99,7 @@ async def ingest(body: IngestIn, request: Request, user: dict = Depends(current_
         "repo_name": repo_name,
         "progress": "in-progress",
         "execution_mode": None if existing_repo else "create",
-        "payment_status": "unpaid",
+        "payment_status": "paid" if has_credits else "unpaid",
         "github_url": github_url if existing_repo else None,
         "repo_exists": bool(existing_repo),
     }).execute()
@@ -120,15 +121,20 @@ async def ingest(body: IngestIn, request: Request, user: dict = Depends(current_
     # without needing its own supabase roundtrip; TTL of a week.
     redis.set(f"polaris:markdown:{paper_id}", markdown, ex=604800)
     redis.set(redis_keys.PENDING_JOB.format(job_uuid=job_uuid), json.dumps(job), ex=604800)
+    initial_status = "queued" if has_credits else ("awaiting_code_choice" if existing_repo else "awaiting_payment")
     redis.hset(f"polaris:state:{job_uuid}", mapping={
-        "status": "awaiting_code_choice" if existing_repo else "awaiting_payment",
+        "status": initial_status,
         "paper_id": paper_id,
         "user_id": user["sub"],
         "repo_name": repo_name,
         "github_url": github_url,
         "repo_exists": str(bool(existing_repo)).lower(),
-        "payment_status": "unpaid",
+        "payment_status": "paid" if has_credits else "unpaid",
     })
+    if has_credits:
+        redis.rpush(redis_keys.JOBS, json.dumps(job))
+        redis.delete(redis_keys.PENDING_JOB.format(job_uuid=job_uuid))
+        db.table("code").update({"progress": "in-progress"}).eq("session_id", job_uuid).execute()
     log_step("ingest.redis", f"job_uuid={job_uuid} | {(time.perf_counter()-t1)*1000:.1f}ms")
 
     total = (time.perf_counter() - t0) * 1000
@@ -140,9 +146,9 @@ async def ingest(body: IngestIn, request: Request, user: dict = Depends(current_
         repo_name=repo_name,
         github_url=github_url,
         repo_exists=bool(existing_repo),
-        requires_code_choice=bool(existing_repo),
-        payment_required=True,
-        payment_status="unpaid",
-        checkout_url=get_settings().PAYMENT_CHECKOUT_URL or None,
+        requires_code_choice=bool(existing_repo) and not has_credits,
+        payment_required=not has_credits,
+        payment_status="paid" if has_credits else "unpaid",
+        checkout_url=None if has_credits else (get_settings().PAYMENT_CHECKOUT_URL or None),
         repo_contents=repo_contents,
     )

@@ -31,17 +31,9 @@ def parse_json_or_none(text: str, model: type[T]) -> T | None:
 
 
 def load_paper_markdown(paper_id: str) -> str:
-    """Fetch the parsed markdown. Tries supabase first; falls back to the redis
-    cache the backend stashes at `polaris:markdown:{paper_id}` (hot path / dev)."""
-    from worker.store import get_redis, get_supabase
-    db = get_supabase()
-    if db is not None:
-        try:
-            rows = db.table("papers").select("markdown").eq("id", paper_id).limit(1).execute().data
-            if rows and rows[0].get("markdown"):
-                return rows[0]["markdown"]
-        except Exception:
-            pass
+    """Fetch the parsed markdown from the redis cache the backend stashes at
+    `polaris:markdown:{paper_id}` (TTL 1 week)."""
+    from worker.store import get_redis
     try:
         cached = get_redis().get(f"polaris:markdown:{paper_id}")
         if cached:

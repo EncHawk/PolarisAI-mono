@@ -15,7 +15,10 @@ create table if not exists users (
     x             text,
     credits       int not null default 3,
     api_key       text unique,
-    created_at    timestamptz default now()
+    subscription_id     text,
+    subscription_tier   text check (subscription_tier in ('starter','pro','ultimate','lifetime')),
+    renews_at           timestamptz,
+    created_at          timestamptz default now()
 );
 alter table users add column if not exists name text;
 alter table users add column if not exists password_hash text;
@@ -24,6 +27,9 @@ alter table users add column if not exists username text;
 alter table users add column if not exists x text;
 alter table users add column if not exists credits int not null default 3;
 alter table users add column if not exists api_key text unique;
+alter table users add column if not exists subscription_id text;
+alter table users add column if not exists subscription_tier text;
+alter table users add column if not exists renews_at timestamptz;
 
 -- papers: one ingest / job per paper attempt
 create table if not exists papers (
@@ -32,7 +38,6 @@ create table if not exists papers (
     arxiv_id    text,
     title       text,
     job_uuid    uuid unique not null,
-    markdown    text,
     status      text not null default 'queued',
     error       text,
     code_files  jsonb,

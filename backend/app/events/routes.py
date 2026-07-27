@@ -1,7 +1,7 @@
 """SSE stream of worker trace events for a job_uuid.
 
 - Uses the redis list `polaris:traces:{uuid}` as a durable replay log.
-- Also subscribes to `polaris:traces:{uuid}:pub` pub/sub for live tailing.
+- Polls the list for new items (Upstash REST has no pub/sub).
 - Streams `data: {json}\n\n` frames with periodic comment heartbeats.
 - Closes when the job reaches a terminal state (done/failed).
 """
@@ -61,7 +61,6 @@ async def stream_events(
     _verify_owner(job_uuid, user["sub"])
     redis = get_redis()
     traces_key = f"polaris:traces:{job_uuid}"
-    pub_key = f"polaris:traces:{job_uuid}:pub"
     state_key = f"polaris:state:{job_uuid}"
 
     replay_count = redis.llen(traces_key)
@@ -83,36 +82,40 @@ async def stream_events(
             log_step("events.stream.terminal", f"job_uuid={job_uuid} | status={terminal_status} | replay={frames} | {(time.perf_counter()-t_start)*1000:.1f}ms")
             return
 
-        # 2) live tail via pub/sub + heartbeat
-        pubsub = redis.pubsub()
-        pubsub.subscribe(pub_key)
+        # 2) live tail via list polling (Upstash REST has no pub/sub)
+        cursor = len(replay)
         heartbeat_counter = 0
-        try:
-            while True:
-                if await request.is_disconnected():
-                    log_step("events.stream.disconnect", f"job_uuid={job_uuid} | frames={frames} | live={(time.perf_counter()-t_start)*1000:.1f}ms")
-                    break
-                msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-                if msg and msg.get("type") == "message":
-                    data = msg["data"]
-                    yield f"data: {data}\n\n"
+        while True:
+            if await request.is_disconnected():
+                log_step("events.stream.disconnect", f"job_uuid={job_uuid} | frames={frames} | live={(time.perf_counter()-t_start)*1000:.1f}ms")
+                break
+            # poll for new list items
+            total = redis.llen(traces_key)
+            if total > cursor:
+                new_lines = redis.lrange(traces_key, cursor, total - 1)
+                for line in new_lines:
+                    yield f"data: {line}\n\n"
                     frames += 1
                     # check terminal
                     try:
-                        ev = json.loads(data)
+                        ev = json.loads(line)
                         status_value = ev.get("status") or ev.get("conclusion")
                         if ev.get("kind") == "status" and status_value in _TERMINAL:
                             log_step("events.stream.terminal", f"job_uuid={job_uuid} | status={status_value} | frames={frames} | live={(time.perf_counter()-t_start)*1000:.1f}ms")
                             return
                     except Exception:
                         pass
-                else:
-                    heartbeat_counter += 1
-                    if heartbeat_counter % 15 == 0:
-                        yield ": keep-alive\n\n"
-                    await asyncio.sleep(0.1)
-        finally:
-            pubsub.close()
+                cursor = total
+            # check state hash for terminal status
+            terminal_status = redis.hget(state_key, "status")
+            if terminal_status in _TERMINAL:
+                yield f"data: {json.dumps({'agent':'SYSTEM','kind':'status','status': terminal_status})}\n\n"
+                log_step("events.stream.terminal", f"job_uuid={job_uuid} | status={terminal_status} | frames={frames} | live={(time.perf_counter()-t_start)*1000:.1f}ms")
+                return
+            heartbeat_counter += 1
+            if heartbeat_counter % 15 == 0:
+                yield ": keep-alive\n\n"
+            await asyncio.sleep(0.5)
 
     log_step("events.stream.ready", f"job_uuid={job_uuid} | setup={(time.perf_counter()-t0)*1000:.1f}ms")
     return StreamingResponse(gen(), media_type="text/event-stream",
