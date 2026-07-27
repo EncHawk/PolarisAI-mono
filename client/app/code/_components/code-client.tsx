@@ -157,6 +157,7 @@ function useSSE(jobUuid: string | null, onMessage: (data: string) => void) {
           headers: { Accept: 'text/event-stream' },
         })
         if (!res.ok || !res.body) {
+          console.error('[SSE] stream failed', res.status, res.statusText)
           setError(`Events stream failed (${res.status})`)
           setConnected(false)
           return
@@ -260,7 +261,7 @@ function CodeViewer({ content, language }: { content: string; language: string }
 
 async function fetchGitHubRepoFiles(githubUrl: string | null): Promise<RepoFile[]> {
   if (!githubUrl) return []
-  const m = githubUrl.match(/github\.com[/:]([^/]+)\/([^/.]+?)(?:\.git)?$/)
+  const m = githubUrl.match(/github\.com[/:]([^/]+)\/([^/.]+?)(?:\.git)?(?:\/.*)?$/)
   if (!m) return []
   const [, owner, repo] = m
   try {
@@ -331,6 +332,7 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
   const [startingNew, setStartingNew] = useState(false)
   const [bottomPanelHeight, setBottomPanelHeight] = useState(260)
   const [awaitingApproval, setAwaitingApproval] = useState<{ feedback: string } | null>(null)
+  const [liveCredits, setLiveCredits] = useState(account.credits)
   const tracesEndRef = useRef<HTMLDivElement>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -387,13 +389,37 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
           data.repo_contents = ghFiles
         }
       }
-      setSession(data)
-      const firstFile = data.repo_contents.find((f) => f.type === 'file')
-      if (firstFile && !activeFile) setActiveFile(firstFile)
+      setSession((prev) => {
+        if (!prev) return data
+        const merged = { ...prev, ...data }
+        if (data.repo_contents.length > 0) merged.repo_contents = data.repo_contents
+        return merged
+      })
+      if (data.repo_contents.length > 0 && !activeFile) {
+        const firstFile = data.repo_contents.find((f) => f.type === 'file')
+        if (firstFile) setActiveFile(firstFile)
+      }
     } catch {
       /* ignore */
     }
   }, [selectedJob, activeFile])
+
+  const fetchAccount = useCallback(async () => {
+    try {
+      const res = await fetch('/api/proxy/auth/account')
+      if (res.ok) {
+        const data = await res.json() as { credits?: number }
+        if (typeof data.credits === 'number') setLiveCredits(data.credits)
+      }
+    } catch {}
+  }, [])
+
+  // Refresh account data when session completes
+  useEffect(() => {
+    if (session?.progress === 'completed' || session?.progress === 'failed') {
+      fetchAccount()
+    }
+  }, [session?.progress, fetchAccount])
 
   // Fetch file content when active file changes
   useEffect(() => {
@@ -455,6 +481,13 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
   }, [refreshSession])
 
   const { connected: sseConnected, error: sseError, disconnect } = useSSE(selectedJob, handleSSEMessage)
+
+  // Poll session as fallback when SSE is disconnected
+  useEffect(() => {
+    if (!selectedJob || sseConnected) return
+    const interval = setInterval(refreshSession, 5000)
+    return () => clearInterval(interval)
+  }, [selectedJob, sseConnected, refreshSession])
 
   useEffect(() => {
     tracesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -616,15 +649,24 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
           <span className="text-text4">/</span>
           <span className="text-xs text-text3">{activePaper?.title || 'Code workspace'}</span>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {selectedJob && (
-            <button
-              type="button"
-              onClick={terminate}
-              className="inline-flex h-8 items-center rounded-lg border border-border-strong px-3 text-xs font-medium text-text3 transition hover:border-red-300 hover:text-red-500"
-            >
-              Stop
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => { refreshSession(); fetchAccount() }}
+                className="inline-flex h-8 items-center rounded-lg border border-border-strong px-3 text-xs font-medium text-text3 transition hover:border-blue hover:text-blue"
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={terminate}
+                className="inline-flex h-8 items-center rounded-lg border border-border-strong px-3 text-xs font-medium text-text3 transition hover:border-red-300 hover:text-red-500"
+              >
+                Stop
+              </button>
+            </>
           )}
           <UserBubble account={account} />
         </div>
@@ -684,7 +726,7 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
           <div className="border-t border-border p-3">
             <div className="flex items-center justify-between">
               <span className="font-mono text-[10px] text-text4">Credits</span>
-              <span className="text-xs font-semibold text-text">${account.credits.toFixed(2)}</span>
+              <span className="text-xs font-semibold text-text">${liveCredits.toFixed(2)}</span>
             </div>
           </div>
         </aside>
