@@ -3,20 +3,9 @@ from typing import Literal
 from pydantic import BaseModel
 
 
-class GoogleLoginIn(BaseModel):
+class ExchangeIn(BaseModel):
+    """Google ID token — the only thing the backend accepts from Google."""
     id_token: str
-
-
-class SignupIn(BaseModel):
-    name: str
-    email: str
-    password: str
-    github: str | None = None
-
-
-class LoginIn(BaseModel):
-    email: str
-    password: str
 
 
 class AuthOut(BaseModel):
@@ -29,13 +18,16 @@ class AuthOut(BaseModel):
     api_key: str
 
 
-class UserOut(BaseModel):
+class AccountOut(BaseModel):
     id: str
     email: str
     name: str | None = None
     username: str | None = None
     github: str | None = None
     x: str | None = None
+    credits: float
+    subscription_tier: str | None = None
+    renews_at: str | None = None
 
 
 class IngestIn(BaseModel):
@@ -90,6 +82,9 @@ class PaymentWebhookIn(BaseModel):
     provider_reference: str | None = None
 
 
+# Subscriptions: $5 / $20 / $200 per month, billed via Razorpay.
+# `plan` identifies the tier; on capture/renew the backend grants that many
+# USD credits to the user's account.
 class RazorpayCheckoutIn(BaseModel):
     plan: Literal["starter", "pro", "lab"] = "starter"
     job_uuid: str | None = None
@@ -106,3 +101,13 @@ class RazorpayVerifyIn(BaseModel):
 class PlanFeedbackIn(BaseModel):
     approved: bool
     feedback: str = ""
+
+
+class UsageReportIn(BaseModel):
+    """Worker -> backend LLM token usage report. Deducted from users.credits."""
+    user_id: str
+    job_uuid: str
+    agent: str | None = None
+    model: str | None = None
+    input_tokens: int = 0
+    output_tokens: int = 0

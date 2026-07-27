@@ -21,12 +21,12 @@ import json
 import time
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
-from app.redis_keys import redis_keys
 
 from app.auth.sessions import current_user
 from app.config import get_settings
-from app.logging_utils import log_step, POLARIS_LOGGER
+from app.logging_utils import log_step
 from app.ratelimit import limiter
+from app.redis_keys import redis_keys
 from app.schemas import CodeChoiceIn, CodeSessionOut, PaymentWebhookIn
 from app.store.redis import get_redis
 from app.store.supabase import get_supabase

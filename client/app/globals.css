@@ -1,0 +1,129 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-bg: #ffffff;
+  --color-surface: #ffffff;
+  --color-surface-alt: #fafafa;
+  --color-surface-blue: #f4f8ff;
+  --color-border: rgba(15, 46, 92, 0.1);
+  --color-border-strong: #c5dbf2;
+  --color-blue: #0562ef;
+  --color-blue-soft: #7cb7ff;
+  --color-navy: #0b1015;
+  --color-navy-deep: #07224f;
+  --color-amber: #f5a623;
+  --color-text: #0b1015;
+  --color-text3: #525252;
+  --color-text4: #a3a3a3;
+  --font-sans: 'DM Sans', sans-serif;
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+  --ease-out-expo: cubic-bezier(0.22, 1, 0.36, 1);
+  --shadow-sm: 0 8px 20px rgba(5, 98, 239, 0.08);
+  --shadow-md: 0 15px 40px rgba(11, 16, 21, 0.08);
+  --shadow-lg: 0 25px 80px rgba(11, 16, 21, 0.12);
+}
+
+html { scroll-behavior: smooth; }
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+a { color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+
+.logo-sheen { position: relative; overflow: hidden; }
+.logo-sheen::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -80%; width: 45%;
+  background: linear-gradient(105deg, transparent, rgba(255,255,255,0.65), transparent);
+  transform: skewX(-18deg); pointer-events: none; transition: left 0.6s ease;
+}
+.logo-sheen:hover::after { left: 140%; }
+
+.btn-sheen { position: relative; overflow: hidden; }
+.btn-sheen::after {
+  content: ''; position: absolute; top: 0; bottom: 0; left: -80%; width: 45%;
+  background: linear-gradient(105deg, transparent, rgba(255,255,255,0.4), transparent);
+  transform: skewX(-18deg); pointer-events: none; transition: left 0.55s ease;
+}
+.btn-sheen:hover::after { left: 140%; }
+
+/* Every blue-filled button (regardless of whether a Tailwind `text-white`
+   utility was applied) gets pure white text + a readable navy text-shadow so
+   the label lifts off the saturated blue fill. */
+button[class*='bg-blue'],
+a[class*='bg-blue'] {
+  color: #ffffff !important;
+  text-shadow: 0 1px 2px rgba(7, 34, 79, 0.45), 0 0 1px rgba(255, 255, 255, 0.25) !important;
+}
+.btn-sheen {
+  text-shadow: 0 1px 2px rgba(7, 34, 79, 0.28);
+}
+
+.gis-wrap { display: inline-flex; align-items: center; min-height: 40px; }
+.gis-wrap > div { border-radius: 10px !important; }
+
+/* Sign-in modal blue spinner — a soft track with a solid blue arc */
+.polaris-spinner {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 4px solid rgba(5, 98, 239, 0.16);
+  border-top-color: var(--color-blue);
+  animation: polaris-spin 0.85s linear infinite;
+  box-shadow: 0 0 32px rgba(5, 98, 239, 0.22);
+}
+@keyframes polaris-spin { to { transform: rotate(360deg); } }
+
+/* Modal backdrop + card used by the Google sign-in flow */
+.polaris-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(7, 17, 28, 0.55);
+  backdrop-filter: blur(6px);
+}
+.polaris-modal-card {
+  width: min(440px, calc(100% - 2rem));
+  border-radius: 20px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-strong);
+  box-shadow: 0 30px 80px rgba(11, 16, 21, 0.32);
+  padding: 32px 28px 28px;
+  position: relative;
+}
+
+.marquee { display: flex; width: max-content; animation: marquee 32s linear infinite; }
+.marquee:hover { animation-play-state: paused; }
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+
+.scroll-path {
+  fill: none; stroke: var(--color-blue); stroke-width: 2; stroke-linecap: round; opacity: 0.4;
+}
+
+.card-shine { position: relative; isolation: isolate; }
+.card-shine::before {
+  content: ''; position: absolute; inset: 0; border-radius: inherit; padding: 1.5px;
+  background: linear-gradient(120deg, transparent 0%, transparent 30%, rgba(5,98,239,0.9) 48%, rgba(124,183,255,0.85) 56%, transparent 74%, transparent 100%);
+  background-size: 280% 100%; background-position: 140% 0;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: 0; transition: opacity 0.3s ease; pointer-events: none; z-index: 1;
+}
+.card-shine:hover::before { opacity: 1; animation: border-move 1.6s linear infinite; }
+@keyframes border-move { from { background-position: 140% 0; } to { background-position: -140% 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  .logo-sheen::after, .btn-sheen::after { display: none; }
+}

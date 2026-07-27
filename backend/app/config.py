@@ -18,8 +18,10 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
 
-    JWT_SECRET: str = "dev-only-change-me"
-    JWT_ALG: str = "HS256"
+    # Shared secret the worker presents to /internal/* endpoints when reporting
+    # LLM token usage. Production requires it.
+    WORKER_SECRET: str = ""
+
     SESSION_TTL_SECONDS: int = 2_592_000
 
     SUPABASE_URL: str = ""
@@ -78,8 +80,8 @@ class Settings(BaseSettings):
             missing = [
                 name for name, value in {
                     "GOOGLE_CLIENT_ID": self.GOOGLE_CLIENT_ID,
-                    "GOOGLE_CLIENT_SECRET": self.GOOGLE_CLIENT_SECRET,
                     "GITHUB_ACCESS_TOKEN": self.GITHUB_ACCESS_TOKEN,
+                    "WORKER_SECRET": self.WORKER_SECRET,
                 }.items() if not value or value == "dev-only-change-me"]
             if missing:
                 raise ValueError(f"missing production secrets: {', '.join(missing)}")

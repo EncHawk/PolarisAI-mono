@@ -4,26 +4,54 @@
 
 create extension if not exists "pgcrypto";
 
--- users: name, email, salted password, github
+-- users: name, email, github, api_key (single per-user UUID session token),
+-- credits (USD numeric balance), and current subscription state.
+-- Passwords are no longer used (Google sign-in lives in the frontend).
 create table if not exists users (
-    id            uuid primary key default gen_random_uuid(),
-    name          text,
-    email         text unique not null,
-    password_hash text,                 -- bcrypt salted hash; null for OAuth-only users
-    github        text,
-    username      text,
-    x             text,
-    credits       int not null default 3,
-    api_key       text unique,
-    created_at    timestamptz default now()
+    id                uuid primary key default gen_random_uuid(),
+    name              text,
+    email             text unique not null,
+    password_hash     text,                                  -- legacy; unused now
+    github            text,
+    username          text,
+    x                 text,
+    credits           numeric(12,4) not null default 0.0000,  -- USD balance
+    api_key           text unique,
+    subscription_id   text,
+    subscription_tier text check (subscription_tier is null
+                              or subscription_tier in ('starter', 'pro', 'lab')),
+    renews_at         timestamptz,
+    created_at        timestamptz default now()
 );
 alter table users add column if not exists name text;
 alter table users add column if not exists password_hash text;
 alter table users add column if not exists github text;
 alter table users add column if not exists username text;
 alter table users add column if not exists x text;
-alter table users add column if not exists credits int not null default 3;
 alter table users add column if not exists api_key text unique;
+alter table users add column if not exists subscription_id   text;
+alter table users add column if not exists subscription_tier text
+    check (subscription_tier is null or subscription_tier in ('starter', 'pro', 'lab'));
+alter table users add column if not exists renews_at timestamptz;
+-- credits: int -> numeric(12,4) USD. Existing rows keep value (3 -> $3.0000).
+alter table users alter column credits type numeric(12,4) using credits::numeric(12,4);
+alter table users alter column credits set default 0.0000;
+
+-- usage_events: append-only ledger of LLM token usage. The backend atomically
+-- deducts cost_usd from users.credits on each insert.
+create table if not exists usage_events (
+    id            uuid primary key default gen_random_uuid(),
+    user_id       uuid not null references users(id) on delete cascade,
+    job_uuid      uuid not null,
+    agent         text,
+    model         text,
+    input_tokens  int  not null default 0,
+    output_tokens int  not null default 0,
+    cost_usd      numeric(12,6) not null default 0,
+    ts            timestamptz not null default now()
+);
+create index if not exists usage_user_idx on usage_events(user_id, ts desc);
+create index if not exists usage_job_idx  on usage_events(job_uuid, ts);
 
 -- papers: one ingest / job per paper attempt
 create table if not exists papers (

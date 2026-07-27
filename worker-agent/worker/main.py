@@ -14,6 +14,7 @@ from worker.logger import PipelineTimer
 from worker.state import WorkerState
 from worker.store import get_redis
 from worker.traces import error, status, step
+from worker.usage import set_job_context
 
 
 def main() -> None:
@@ -85,6 +86,10 @@ def run_one(app, job: dict) -> None:
         "error": None,
         "timer": timer,
     }
+    # Make (user_id, job_uuid) visible to the per-LLM usage callback so every
+    # agent call reports its input+output token counts to the backend, which
+    # atomically deducts the $0.05/100k cost from the user's credit balance.
+    set_job_context(state["user_id"], job_uuid)
     try:
         final = app.invoke(state, config={"recursion_limit": 200})
     except Exception as e:

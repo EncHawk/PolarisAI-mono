@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
 from app.auth.sessions import current_user_sse
-from app.logging_utils import log_step, POLARIS_LOGGER
+from app.logging_utils import log_step
 from app.store.redis import get_redis
 from app.store.supabase import get_supabase
 

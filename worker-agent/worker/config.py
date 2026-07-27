@@ -27,6 +27,11 @@ class Settings(BaseSettings):
 
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # Backend endpoints for usage reporting. WORKER_SECRET matches the backend's
+    # WORKER_SECRET and is sent on the X-Worker-Secret header.
+    BACKEND_URL: str = "http://localhost:3000"
+    WORKER_SECRET: str = ""
+
     SUPABASE_URL: str = ""
     SUPABASE_KEY: str = Field(
         "", validation_alias=AliasChoices("SUPABASE_KEY", "SUPABASE_SECRET_KEY")

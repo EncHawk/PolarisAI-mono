@@ -7,7 +7,7 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
 from app.config import get_settings
-from app.logging_utils import log_step, POLARIS_LOGGER
+from app.logging_utils import POLARIS_LOGGER, log_step
 from app.store.redis import get_redis
 from app.store.supabase import get_supabase
 

@@ -1,5 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
+'use client'
+
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
+import type { ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 declare global {
   interface Window {
@@ -34,19 +37,9 @@ declare global {
 
 type PlanId = 'starter' | 'pro' | 'lab'
 
-/* ────────────────────────────────────────────────────────────────────── */
-/*  Reveal helpers (motion)                                                */
-/* ────────────────────────────────────────────────────────────────────── */
+/*  Reveal helpers  */
 
-function Reveal({
-  children,
-  className = '',
-  delay = 0,
-}: {
-  children: ReactNode
-  className?: string
-  delay?: number
-}) {
+function Reveal({ children, className = '', delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
   const reduce = useReducedMotion()
   return (
     <motion.div
@@ -61,21 +54,16 @@ function Reveal({
   )
 }
 
-/* ────────────────────────────────────────────────────────────────────── */
-/*  Scroll-drawn line                                                       */
-/* ────────────────────────────────────────────────────────────────────── */
+/*  Scroll-drawn line  */
 
 function ScrollLine() {
   const pathRef = useRef<SVGPathElement | null>(null)
-
   useEffect(() => {
     const path = pathRef.current
     if (!path) return
-
     const length = path.getTotalLength()
     path.style.strokeDasharray = `${length}`
     path.style.strokeDashoffset = `${length}`
-
     let frame = 0
     const update = () => {
       cancelAnimationFrame(frame)
@@ -86,7 +74,6 @@ function ScrollLine() {
         path.style.strokeDashoffset = `${length * (1 - progress)}`
       })
     }
-
     window.addEventListener('scroll', update, { passive: true })
     window.addEventListener('resize', update)
     update()
@@ -96,7 +83,6 @@ function ScrollLine() {
       cancelAnimationFrame(frame)
     }
   }, [])
-
   return (
     <svg
       className="pointer-events-none absolute inset-x-0 top-0 z-0 h-full w-full"
@@ -113,7 +99,6 @@ function ScrollLine() {
   )
 }
 
-/* Footer wordmark — POLARIS traced as SVG text, then filled blue on hover */
 function PolarisWordmark() {
   const reduce = useReducedMotion()
   return (
@@ -158,9 +143,7 @@ function PolarisWordmark() {
   )
 }
 
-/* ────────────────────────────────────────────────────────────────────── */
-/*  Google OAuth login button                                               */
-/* ────────────────────────────────────────────────────────────────────── */
+/*  Google Identity Services login — modal flow  */
 
 function loadGoogleIdentity(): Promise<void> {
   if (window.google?.accounts?.id) return Promise.resolve()
@@ -175,108 +158,192 @@ function loadGoogleIdentity(): Promise<void> {
   })
 }
 
-function useAuth() {
-  const [authed, setAuthed] = useState(false)
-  const [email, setEmail] = useState('')
-  const [loaded, setLoaded] = useState(false)
+type SignInStep = 'pick' | 'verifying' | 'error'
 
-  // Probe the httpOnly session cookie via /auth/me — no JS token touching.
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const r = await fetch('/auth/me', { credentials: 'include' })
-        if (cancelled) return
-        if (r.ok) {
-          const u = (await r.json()) as { email: string }
-          setEmail(u.email)
-          setAuthed(true)
-        }
-      } catch {
-        /* ignore */
-      } finally {
-        if (!cancelled) setLoaded(true)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const signIn = useCallback((userEmail: string) => {
-    setEmail(userEmail)
-    setAuthed(true)
-  }, [])
-
-  const signOut = useCallback(async () => {
-    setEmail('')
-    setAuthed(false)
-    try {
-      await fetch('/auth/logout', { method: 'POST', credentials: 'include' })
-    } catch {
-      /* ignore */
-    }
-  }, [])
-
-  return { authed, email, loaded, signIn, signOut }
-}
-
-function GoogleLoginButton({ onSignIn }: { onSignIn: (email: string) => void }) {
+function SignInModal({
+  open,
+  onClose,
+  onSignedIn,
+}: {
+  open: boolean
+  onClose: () => void
+  onSignedIn: (email: string) => void
+}) {
   const btnRef = useRef<HTMLDivElement | null>(null)
-  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined
+  const [step, setStep] = useState<SignInStep>('pick')
+  const [error, setError] = useState('')
+  const [hint, setHint] = useState('Closing Google picker…')
+  const clientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID
 
+  // Reset to the picker step every time the modal opens.
   useEffect(() => {
-    if (!clientId) return
-    let cancelled = false
+    if (!open) return
+    setStep('pick')
+    setError('')
+  }, [open])
 
+  // Render the Google Identity Services pill into btnRef once per open.
+  useEffect(() => {
+    if (!open || !clientId) return
+    let cancelled = false
     const render = () => {
       if (cancelled || !window.google?.accounts?.id || !btnRef.current) return
       window.google.accounts.id.initialize({
         client_id: clientId,
         callback: async (resp: { credential?: string }) => {
           const idToken = resp.credential
-          if (!idToken) return
+          if (!idToken) {
+            setStep('error')
+            setError('Google did not return a credential. Try again.')
+            return
+          }
+          // Google picker closed → switch to the blue loading state immediately
+          // so the user sees we're working on their sign-in.
+          setStep('verifying')
+          setHint('Verifying your Google account…')
           try {
-            const r = await fetch('/auth/google', {
+            const r = await fetch('/api/auth/callback', {
               method: 'POST',
-              credentials: 'include',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ id_token: idToken }),
             })
-            if (!r.ok) return
+            if (!r.ok) {
+              const detail = await r.json().catch(() => ({ detail: 'Sign-in failed.' }))
+              setStep('error')
+              setError(typeof detail.detail === 'string' ? detail.detail : 'Sign-in failed.')
+              return
+            }
+            setHint('Issuing your Polaris API key…')
             const data = (await r.json()) as { email: string }
-            // Backend set the httpOnly session cookie; just refresh UI state.
-            onSignIn(data.email)
+            onSignedIn(data.email)
+            onClose()
           } catch {
-            /* ignore */
+            setStep('error')
+            setError('Could not reach the Polaris API. Check your connection and try again.')
           }
         },
       })
       window.google.accounts.id.renderButton(btnRef.current, {
         type: 'standard',
-        size: 'medium',
+        size: 'large',
         text: 'signin_with',
         shape: 'pill',
         theme: 'outline',
-        width: 150,
+        width: 280,
       })
     }
-
     if (window.google?.accounts?.id) render()
     else loadGoogleIdentity().then(render)
-
     return () => {
       cancelled = true
     }
-  }, [clientId, onSignIn])
+  }, [open, clientId, onSignedIn, onClose])
 
-  if (!clientId) return null
-  return <div ref={btnRef} className="gis-wrap" aria-label="Sign in with Google" />
+  // Close on Escape.
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && step !== 'verifying') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open, step, onClose])
+
+  if (!open) return null
+
+  return (
+    <AnimatePresence>
+      <motion.div
+        className="polaris-modal-overlay"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.18 }}
+        onClick={() => step !== 'verifying' && onClose()}
+      >
+        <motion.div
+          className="polaris-modal-card"
+          initial={{ opacity: 0, y: 16, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 8, scale: 0.98 }}
+          transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+          onClick={(e) => e.stopPropagation()}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Sign in to Polaris"
+        >
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={step === 'verifying'}
+            aria-label="Close sign-in"
+            className="absolute right-4 top-4 grid h-8 w-8 place-items-center rounded-full text-text4 transition hover:bg-surface-blue hover:text-text disabled:opacity-40"
+          >
+            ×
+          </button>
+
+          {step === 'pick' && (
+            <div className="flex flex-col items-center text-center">
+              <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-blue">Sign in</span>
+              <h2 className="mt-3 font-display text-2xl font-medium tracking-tight text-text">
+                Sign in to Polaris
+              </h2>
+              <p className="mt-2 max-w-[34ch] text-sm leading-relaxed text-text3">
+                Use your Google account. We verify it once, issue your API key, and never see Google again.
+              </p>
+              <div className="mt-7 flex min-h-[52px] items-center justify-center">
+                <div ref={btnRef} className="gis-wrap" aria-label="Sign in with Google" />
+              </div>
+              <p className="mt-5 font-mono text-[11px] text-text4">
+                By signing in you accept our terms. New accounts start with $3.00 in credits.
+              </p>
+            </div>
+          )}
+
+          {step === 'verifying' && (
+            <div className="flex flex-col items-center text-center">
+              <div className="polaris-spinner" role="status" aria-live="polite" />
+              <h2 className="mt-6 font-display text-xl font-medium tracking-tight text-text">
+                Signing you in
+              </h2>
+              <motion.p
+                key={hint}
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.25 }}
+                className="mt-2 font-mono text-[12px] tracking-wide text-blue"
+              >
+                {hint}
+              </motion.p>
+              <p className="mt-5 max-w-[34ch] text-xs leading-relaxed text-text4">
+                Hang tight — this usually takes a second.
+              </p>
+            </div>
+          )}
+
+          {step === 'error' && (
+            <div className="flex flex-col items-center text-center">
+              <span className="font-mono text-[11px] uppercase tracking-[0.18em] text-text4">Sign-in failed</span>
+              <h2 className="mt-3 font-display text-xl font-medium tracking-tight text-text">
+                We couldn’t sign you in
+              </h2>
+              <p className="mt-2 max-w-[36ch] text-sm leading-relaxed text-text3">{error}</p>
+              <button
+                type="button"
+                onClick={() => setStep('pick')}
+                className="btn-sheen mt-7 inline-flex h-10 items-center rounded-[10px] bg-blue px-5 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5"
+              >
+                Try again
+              </button>
+            </div>
+          )}
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  )
 }
 
-/* ────────────────────────────────────────────────────────────────────── */
-/*  Rotating hero feature text                                              */
-/* ────────────────────────────────────────────────────────────────────── */
+/*  Rotating hero feature text  */
 
 const HERO_FEATURES = [
   'Read the paper. Trace the evidence.',
@@ -289,13 +356,11 @@ const HERO_FEATURES = [
 function RotatingHero() {
   const reduce = useReducedMotion()
   const [i, setI] = useState(0)
-
   useEffect(() => {
     if (reduce) return
     const t = setInterval(() => setI((v) => (v + 1) % HERO_FEATURES.length), 2800)
     return () => clearInterval(t)
   }, [reduce])
-
   return (
     <div className="relative h-7 overflow-hidden">
       <AnimatePresence mode="wait">
@@ -314,9 +379,7 @@ function RotatingHero() {
   )
 }
 
-/* ────────────────────────────────────────────────────────────────────── */
-/*  Agents — data, infinite marquee, sticky terminal                         */
-/* ────────────────────────────────────────────────────────────────────── */
+/*  Agents  */
 
 const agents = [
   {
@@ -361,13 +424,7 @@ const agents = [
   },
 ]
 
-function AgentMarquee({
-  active,
-  onHover,
-}: {
-  active: number
-  onHover: (i: number) => void
-}) {
+function AgentMarquee({ active, onHover }: { active: number; onHover: (i: number) => void }) {
   const loop = [...agents, ...agents]
   return (
     <div className="relative overflow-hidden">
@@ -385,12 +442,8 @@ function AgentMarquee({
               ].join(' ')}
             >
               <span className="font-mono text-[11px] text-text4">0{i + 1}</span>
-              <p className="mt-3 font-mono text-[11px] font-medium tracking-[0.14em] text-blue">
-                {agent.label}
-              </p>
-              <h3 className="mt-1.5 font-display text-base font-medium tracking-tight text-text">
-                {agent.title}
-              </h3>
+              <p className="mt-3 font-mono text-[11px] font-medium tracking-[0.14em] text-blue">{agent.label}</p>
+              <h3 className="mt-1.5 font-display text-base font-medium tracking-tight text-text">{agent.title}</h3>
               <ul className="mt-3 flex flex-col gap-1.5">
                 {agent.features.map((f) => (
                   <li key={f} className="flex items-center gap-2 text-[12.5px] text-text3">
@@ -411,17 +464,13 @@ function AgentMarquee({
 
 function Terminal({ agent }: { agent: (typeof agents)[number] }) {
   const reduce = useReducedMotion()
-  const [shown, setShown] = useState(() =>
-    reduce ? agent.log.join('\n') : '',
-  )
-
+  const [shown, setShown] = useState(() => (reduce ? agent.log.join('\n') : ''))
   useEffect(() => {
     if (reduce) return
     let lineI = 0
     let charIdx = 0
     let typing = true
     let timer: ReturnType<typeof setTimeout>
-
     const tick = () => {
       if (!typing) return
       const current = agent.log[lineI]
@@ -436,10 +485,7 @@ function Terminal({ agent }: { agent: (typeof agents)[number] }) {
         return
       }
       charIdx += 1
-      const acc = agent.log
-        .slice(0, lineI)
-        .concat(current.slice(0, charIdx))
-        .join('\n')
+      const acc = agent.log.slice(0, lineI).concat(current.slice(0, charIdx)).join('\n')
       setShown(acc)
       if (charIdx >= current.length) {
         typing = false
@@ -456,7 +502,6 @@ function Terminal({ agent }: { agent: (typeof agents)[number] }) {
     tick()
     return () => clearTimeout(timer)
   }, [agent, reduce])
-
   return (
     <div className="overflow-hidden rounded-2xl border border-border bg-[#13191F] shadow-[0_25px_80px_rgba(11,16,21,0.22)]">
       <div className="flex items-center gap-2 border-b border-white/5 px-4 py-3">
@@ -469,12 +514,7 @@ function Terminal({ agent }: { agent: (typeof agents)[number] }) {
       </div>
       <pre className="min-h-[230px] px-5 py-4 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap text-[#FAF7F2]">
         {shown}
-        <motion.span
-          aria-hidden
-          animate={{ opacity: [1, 0] }}
-          transition={{ duration: 0.6, repeat: Infinity }}
-          className="text-blue-soft"
-        >
+        <motion.span aria-hidden animate={{ opacity: [1, 0] }} transition={{ duration: 0.6, repeat: Infinity }} className="text-blue-soft">
           ▋
         </motion.span>
       </pre>
@@ -482,9 +522,7 @@ function Terminal({ agent }: { agent: (typeof agents)[number] }) {
   )
 }
 
-/* ────────────────────────────────────────────────────────────────────── */
-/*  Razorpay checkout                                                       */
-/* ────────────────────────────────────────────────────────────────────── */
+/*  Razorpay checkout  */
 
 function loadRazorpay(): Promise<boolean> {
   if (window.Razorpay) return Promise.resolve(true)
@@ -503,8 +541,7 @@ async function startCheckout(plan: PlanId, onError: (msg: string) => void) {
     onError('Payment gateway failed to load. Try again.')
     return
   }
-
-  const keyFallback = import.meta.env.VITE_RAZORPAY_KEY_ID as string | undefined
+  const keyFallback = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID
   let order: {
     order_id: string
     amount: number
@@ -514,7 +551,6 @@ async function startCheckout(plan: PlanId, onError: (msg: string) => void) {
     name?: string
     description?: string
   }
-
   try {
     const res = await fetch('/billing/checkout', {
       method: 'POST',
@@ -538,13 +574,11 @@ async function startCheckout(plan: PlanId, onError: (msg: string) => void) {
     onError('Could not reach billing. Is the API up?')
     return
   }
-
   const key = order.key_id || keyFallback
   if (!key) {
     onError('Razorpay key missing.')
     return
   }
-
   const rzp = new window.Razorpay({
     key,
     amount: order.amount,
@@ -578,22 +612,17 @@ async function startCheckout(plan: PlanId, onError: (msg: string) => void) {
           return
         }
         onError('')
-        window.alert('Payment successful. Welcome to Polaris.')
+        window.alert('Payment successful. Your credits have been added.')
       } catch {
         onError('Payment verification failed. Contact support with your receipt.')
       }
     },
   })
-
-  rzp.on('payment.failed', () => {
-    onError('Payment failed. Try another method.')
-  })
+  rzp.on('payment.failed', () => onError('Payment failed. Try another method.'))
   rzp.open()
 }
 
-/* ────────────────────────────────────────────────────────────────────── */
-/*  Header                                                                  */
-/* ────────────────────────────────────────────────────────────────────── */
+/*  Header  */
 
 function Header({
   authed,
@@ -602,19 +631,17 @@ function Header({
   onSignOut,
 }: {
   authed: boolean
-  email: string
-  onSignIn: (userEmail: string) => void
+  email: string | null
+  onSignIn: () => void
   onSignOut: () => void
 }) {
   const [scrolled, setScrolled] = useState(false)
-
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
     onScroll()
     window.addEventListener('scroll', onScroll, { passive: true })
     return () => window.removeEventListener('scroll', onScroll)
   }, [])
-
   return (
     <motion.header
       initial={{ y: -24, opacity: 0 }}
@@ -623,11 +650,12 @@ function Header({
       className={[
         'fixed top-4 left-1/2 z-50 flex w-[min(1200px,calc(100%-2rem))] -translate-x-1/2 items-center justify-between rounded-2xl border px-6 transition-colors duration-300',
         scrolled
-          ? 'border-border-strong bg-white/85 shadow-md backdrop-blur-xl py-3'
+          ? 'border-border-strong bg-white/85 py-3 shadow-md backdrop-blur-xl'
           : 'border-transparent bg-transparent py-5',
       ].join(' ')}
     >
       <a href="/" className="logo-sheen inline-flex items-center gap-2.5 font-display text-lg font-semibold tracking-tight text-text">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/logo.png" alt="" className="h-6 w-6 rounded-md" />
         <span>Polaris</span>
       </a>
@@ -638,9 +666,12 @@ function Header({
       <div className="flex items-center gap-3">
         {authed ? (
           <div className="flex items-center gap-3">
-            <span className="hidden max-w-[18ch] truncate font-mono text-[11px] text-text3 sm:inline">
+            <a
+              href="/account"
+              className="hidden max-w-[18ch] truncate font-mono text-[11px] text-text3 transition hover:text-blue sm:inline"
+            >
               {email}
-            </span>
+            </a>
             <button
               type="button"
               onClick={onSignOut}
@@ -650,7 +681,13 @@ function Header({
             </button>
           </div>
         ) : (
-          <GoogleLoginButton onSignIn={onSignIn} />
+          <button
+            type="button"
+            onClick={onSignIn}
+            className="btn-sheen inline-flex h-9 items-center rounded-[10px] bg-blue px-4 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(5,98,239,0.28)]"
+          >
+            Sign in
+          </button>
         )}
         <a
           href="#pricing"
@@ -663,9 +700,7 @@ function Header({
   )
 }
 
-/* ────────────────────────────────────────────────────────────────────── */
-/*  Pricing                                                                 */
-/* ────────────────────────────────────────────────────────────────────── */
+/*  Pricing  */
 
 const plans: {
   id: PlanId
@@ -683,11 +718,10 @@ const plans: {
     id: 'starter',
     name: 'Starter',
     badge: 'Early bird',
-    price: '$1',
-    was: '$5',
-    cadence: 'one-time',
-    blurb: 'Ship your first three paper implementations without burning a weekend.',
-    features: ['3 custom code runs', '0.5× shared GPU', '1 training job', 'READ → CODE pipeline'],
+    price: '$5',
+    cadence: '/ month',
+    blurb: '10M tokens / month (~$0.05 per 100k input + output). Plenty for your first weekly reproductions.',
+    features: ['~10M tokens / mo', 'READ → CODE pipeline', 'Plan approve / reject', 'Sandbox file review'],
     cta: 'Claim early bird',
   },
   {
@@ -695,8 +729,8 @@ const plans: {
     name: 'Pro',
     price: '$20',
     cadence: '/ month',
-    blurb: 'For researchers who implement papers every week and need real GPU time.',
-    features: ['8 custom repos / mo', '1× full GPU access', 'Plan approve / reject', 'Sandbox file review'],
+    blurb: '40M tokens / month for researchers who implement papers every week and need real throughput.',
+    features: ['~40M tokens / mo', 'Priority queue', 'Plan approve / reject', 'Sandbox file review'],
     cta: 'Go Pro',
     featured: true,
   },
@@ -704,24 +738,16 @@ const plans: {
     id: 'lab',
     name: 'Lab',
     price: '$200',
-    cadence: 'one-time',
-    blurb: 'Train models, customize generated code, and grab coffee while we handle the rest.',
-    features: ['Unlimited customisations', 'Up to 4× priority GPUs', 'Priority queue', 'Team-ready throughput'],
+    cadence: '/ month',
+    blurb: '400M tokens / month for whole labs — run, customize, and train on full paper sets.',
+    features: ['~400M tokens / mo', 'Highest priority GPU queue', 'Team-ready throughput', 'Unlimited customisations'],
     cta: 'Scale the lab',
   },
 ]
 
-/* ────────────────────────────────────────────────────────────────────── */
-/*  App                                                                     */
-/* ────────────────────────────────────────────────────────────────────── */
+/*  Landing  */
 
-function SectionCTA({
-  href,
-  onClick,
-  children,
-  primary = true,
-  type = 'link',
-}: {
+function SectionCTA({ href, onClick, children, primary = true, type = 'link' }: {
   href?: string
   onClick?: () => void
   children: ReactNode
@@ -732,26 +758,44 @@ function SectionCTA({
     ? 'btn-sheen inline-flex h-12 items-center rounded-xl bg-blue px-5 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(5,98,239,0.3)]'
     : 'inline-flex h-11 items-center rounded-xl border border-border-strong bg-white px-4 text-sm font-bold text-text3 transition hover:border-blue hover:bg-surface-blue hover:text-text'
   return type === 'link' ? (
-    <a href={href} className={cls}>
-      {children}
-    </a>
+    <a href={href} className={cls}>{children}</a>
   ) : (
-    <button type="button" onClick={onClick} className={cls}>
-      {children}
-    </button>
+    <button type="button" onClick={onClick} className={cls}>{children}</button>
   )
 }
 
-export default function App() {
+export function Landing({ authed, email }: { authed: boolean; email: string | null }) {
   const [payError, setPayError] = useState('')
   const [paying, setPaying] = useState<PlanId | null>(null)
   const [activeAgent, setActiveAgent] = useState(0)
-  const { authed, email, signIn, signOut } = useAuth()
+  const [signInOpen, setSignInOpen] = useState(false)
+  const [authedState, setAuthed] = useState(authed)
+  const [emailState, setEmail] = useState(email)
 
-  // Auto-cycle the active agent so the terminal keeps telling each story
+  useEffect(() => {
+    setAuthed(authed)
+    setEmail(email)
+  }, [authed, email])
+
   useEffect(() => {
     const t = setInterval(() => setActiveAgent((v) => (v + 1) % agents.length), 5200)
     return () => clearInterval(t)
+  }, [])
+
+  const onSignedIn = useCallback((signedInEmail: string) => {
+    setAuthed(true)
+    setEmail(signedInEmail)
+    setSignInOpen(false)
+  }, [])
+
+  const onSignOut = useCallback(async () => {
+    try {
+      await fetch('/api/auth/signout', { method: 'POST' })
+    } catch {
+      /* ignore */
+    }
+    setAuthed(false)
+    setEmail(null)
   }, [])
 
   const onPay = useCallback(async (plan: PlanId) => {
@@ -768,10 +812,10 @@ export default function App() {
 
   return (
     <div className="relative overflow-x-clip bg-bg text-text">
-      <Header authed={authed} email={email} onSignIn={signIn} onSignOut={signOut} />
+      <Header authed={authedState} email={emailState} onSignIn={() => setSignInOpen(true)} onSignOut={onSignOut} />
       <ScrollLine />
+      <SignInModal open={signInOpen} onClose={() => setSignInOpen(false)} onSignedIn={onSignedIn} />
 
-      {/* Hero — full screen + rotating feature text */}
       <section className="relative z-10 flex min-h-screen flex-col items-start justify-center bg-bg px-6 pt-28 pb-20">
         <div className="relative z-20 mx-auto w-full max-w-[1120px]">
           <Reveal>
@@ -784,20 +828,36 @@ export default function App() {
               every paper you open becomes something you can run.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-4">
-              <SectionCTA href="#pricing">Start for $1</SectionCTA>
-              <SectionCTA href="#how" primary={false}>
-                See how it works
-              </SectionCTA>
+              {!authedState ? (
+                <div className="flex items-center gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setSignInOpen(true)}
+                    className="btn-sheen inline-flex h-12 items-center gap-2 rounded-xl bg-blue px-5 text-sm font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(5,98,239,0.3)]"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true">
+                      <path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.17-1.84H9v3.49h4.84a4.14 4.14 0 0 1-1.79 2.71v2.26h2.9a8.77 8.77 0 0 0 2.69-6.62z"/>
+                      <path fill="#34A853" d="M9 18c2.43 0 4.47-.81 5.96-2.18l-2.9-2.26c-.8.54-1.83.86-3.06.86-2.35 0-4.34-1.59-5.05-3.73H.96v2.32A9 9 0 0 0 9 18z"/>
+                      <path fill="#FBBC05" d="M3.95 10.69A5.4 5.4 0 0 1 3.65 9c0-.59.1-1.16.3-1.69V4.99H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.01l2.99-2.32z"/>
+                      <path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.59A8.99 8.99 0 0 0 .96 4.99l2.99 2.32C4.66 5.17 6.65 3.58 9 3.58z"/>
+                    </svg>
+                    Sign in with Google
+                  </button>
+                  <SectionCTA href="#pricing" primary={false}>See pricing</SectionCTA>
+                </div>
+              ) : (
+                <>
+                  <SectionCTA href="/account">View account</SectionCTA>
+                  <SectionCTA href="#how" primary={false}>See how it works</SectionCTA>
+                </>
+              )}
             </div>
           </Reveal>
         </div>
       </section>
 
-      {/* Agents — full screen, infinite marquee + sticky terminal */}
-      <section
-        id="how"
-        className="relative z-10 flex min-h-screen flex-col justify-center bg-surface-alt px-6 py-28"
-      >
+      <section id="how" className="relative z-10 flex min-h-screen flex-col justify-center bg-surface-alt px-6 py-28">
         <div className="relative z-20 mx-auto w-full max-w-[1200px]">
           <Reveal>
             <p className="mb-4 font-mono text-[11px] font-medium tracking-[0.16em] text-blue uppercase">
@@ -807,7 +867,6 @@ export default function App() {
               From “I should read this” <span className="text-text3">to “it actually works.”</span>
             </h2>
           </Reveal>
-
           <div className="mt-14 grid gap-10 lg:grid-cols-[1.5fr_1fr] lg:items-start">
             <div>
               <AgentMarquee active={activeAgent} onHover={setActiveAgent} />
@@ -818,8 +877,6 @@ export default function App() {
                 <SectionCTA href="#pricing">Start a paper session</SectionCTA>
               </div>
             </div>
-
-            {/* Sticky terminal — stays fixed within this section, leaves with it */}
             <div className="lg:sticky lg:top-28">
               <Terminal agent={agents[activeAgent]} />
             </div>
@@ -827,11 +884,7 @@ export default function App() {
         </div>
       </section>
 
-      {/* Pricing — full screen */}
-      <section
-        id="pricing"
-        className="relative z-10 flex min-h-screen flex-col justify-center bg-surface-blue px-6 py-28"
-      >
+      <section id="pricing" className="relative z-10 flex min-h-screen flex-col justify-center bg-surface-blue px-6 py-28">
         <div className="relative z-20 mx-auto w-full max-w-[1200px]">
           <Reveal>
             <p className="mb-4 font-mono text-[11px] font-medium tracking-[0.16em] text-blue uppercase">
@@ -841,17 +894,15 @@ export default function App() {
               Pay for proof, <span className="text-text3">not promises.</span>
             </h2>
             <p className="mt-5 max-w-[34rem] text-[15px] leading-relaxed text-text3">
-              Early bird is live. Start tiny, upgrade when the lab needs GPUs and unlimited
-              customisations.
+              Credits are USD. Every 100k tokens (input + output) costs $0.05 — deducted on run completion.
+              Subscribe monthly, reuse the balance for any agent.
             </p>
           </Reveal>
-
           {payError ? (
             <p className="relative z-20 mt-6 rounded-xl border border-amber/40 bg-white px-4 py-3 text-sm text-navy">
               {payError}
             </p>
           ) : null}
-
           <div className="mt-14 grid gap-5 lg:grid-cols-3">
             {plans.map((plan) => (
               <motion.article
@@ -909,20 +960,13 @@ export default function App() {
         </div>
       </section>
 
-      {/* Footer — drawing logo + glowing POLARIS */}
       <footer className="relative z-10 border-t border-border bg-bg px-6 py-24">
         <div className="relative z-20 mx-auto flex w-full max-w-[1200px] flex-col items-center gap-10">
           <PolarisWordmark />
           <div className="flex flex-wrap items-center justify-center gap-8 font-mono text-xs text-text3">
-            <a href="https://github.com" className="transition hover:text-blue" target="_blank" rel="noreferrer">
-              GitHub
-            </a>
-            <a href="https://twitter.com" className="transition hover:text-blue" target="_blank" rel="noreferrer">
-              Twitter
-            </a>
-            <a href="https://linkedin.com" className="transition hover:text-blue" target="_blank" rel="noreferrer">
-              LinkedIn
-            </a>
+            <a href="https://github.com" className="transition hover:text-blue" target="_blank" rel="noreferrer">GitHub</a>
+            <a href="https://twitter.com" className="transition hover:text-blue" target="_blank" rel="noreferrer">Twitter</a>
+            <a href="https://linkedin.com" className="transition hover:text-blue" target="_blank" rel="noreferrer">LinkedIn</a>
           </div>
           <span className="font-mono text-xs text-text4">© 2026 Polaris AI</span>
         </div>

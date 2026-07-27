@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from supabase import Client, create_client
-
 from app.config import get_settings
+from supabase import Client, create_client
 
 _client: Client | None = None
 
@@ -33,6 +32,10 @@ class _StubClient:
 
     def table(self, name: str) -> _StubTable:
         return _StubTable(self, name)
+
+    def rpc(self, _fn: str, _params: dict | None = None) -> _StubRpc:
+        # Dev has no Postgres; return a no-op so billing paths don't crash.
+        return _StubRpc()
 
 
 class _StubQuery:
@@ -106,6 +109,13 @@ class _StubRowOp:
             r.update(self._patch)
         class _Resp:
             data = []
+        return _Resp()
+
+
+class _StubRpc:
+    def execute(self):
+        class _Resp:
+            data = None
         return _Resp()
 
 

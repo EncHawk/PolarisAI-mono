@@ -10,6 +10,7 @@ from __future__ import annotations
 from langchain_openai import ChatOpenAI
 
 from worker.config import get_settings
+from worker.usage import UsageHandler
 
 
 def make_llm(agent_name: str, job_uuid: str, temperature: float | None = None) -> ChatOpenAI:
@@ -25,5 +26,6 @@ def make_llm(agent_name: str, job_uuid: str, temperature: float | None = None) -
         "temperature": temperature if temperature is not None else 0.2,
         "max_retries": 1,
         "timeout": 120,
+        "callbacks": [UsageHandler(agent_name)],
     }
     return ChatOpenAI(**kwargs)

@@ -1,27 +1,31 @@
-"""OAuth 2 Bearer-token session management.
+"""API-key auth + USD credit accounting.
 
-- Authenticated requests carry the token in the standard
-  `Authorization: Bearer <token>` header (RFC 6750).
-- For SSE (EventSource cannot set headers), the token may also be passed
-  via the `?api_key=` query param — kept for backward compatibility.
-- After login/google/verify flows, the backend also sets an `Authorization`
-  httpOnly cookie so browser fetches with `credentials: 'include'` work
-  without JS having to touch the token (OAuth 2 BCP — no localStorage).
-- The token is a UUID stored on the users table; login regenerates it,
-  logout wipes it.
+The token is a single UUID stored on users.api_key (rotated on /auth/exchange).
+It is presented via `Authorization: Bearer …`, `X-API-Key`, the `polaris_session`
+cookie (legacy), or `?api_key=` for SSE. The NextJS frontend now owns the
+httpOnly cookie holding the api_key and forwards it as a Bearer header.
+
+Credits are a USD numeric balance on users.credits. LLM token usage is recorded
+in usage_events and deducted atomically here (see record_usage / deduct_credits).
 """
 from __future__ import annotations
 
+import time
 import uuid
+from decimal import Decimal
 
 from fastapi import Cookie, Header, HTTPException, Query, status
 
-from app.config import get_settings
+from app.logging_utils import log_step
 from app.store.supabase import get_supabase
 
 API_KEY_HEADER = "X-API-Key"
 BEARER_HEADER = "Authorization"
 SESSION_COOKIE = "polaris_session"
+
+# Pricing: $0.05 per 100k tokens (input + output).
+PRICE_PER_100K_TOKENS = Decimal("0.05")
+TOKENS_PER_UNIT = Decimal(100_000)
 
 
 def generate_api_key() -> str:
@@ -39,19 +43,26 @@ def _extract_bearer(authorization: str | None) -> str | None:
 
 def verify_api_key(api_key: str | None) -> dict:
     if not api_key:
+        log_step("auth.token.missing", "no bearer/x-api-key/cookie presented")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing api key")
+    t0 = time.perf_counter()
     db = get_supabase()
     rows = (
         db.table("users")
-        .select("id,email,name,username,github,x,credits,api_key")
+        .select(
+            "id,email,name,username,github,x,credits,api_key,"
+            "subscription_id,subscription_tier,renews_at"
+        )
         .eq("api_key", api_key)
         .limit(1)
         .execute()
         .data
     )
     if not rows:
+        log_step("auth.token.invalid", f"key_prefix={api_key[:8]}… | {(time.perf_counter()-t0)*1000:.1f}ms")
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid api key")
     u = rows[0]
+    log_step("auth.token.ok", f"user={u['id']} | email={u['email']} | {(time.perf_counter()-t0)*1000:.1f}ms")
     return {
         "sub": u["id"],
         "email": u["email"],
@@ -59,7 +70,9 @@ def verify_api_key(api_key: str | None) -> dict:
         "username": u.get("username"),
         "github": u.get("github"),
         "x": u.get("x"),
-        "credits": u.get("credits") or 0,
+        "credits": Decimal(str(u.get("credits") or 0)),
+        "subscription_tier": u.get("subscription_tier"),
+        "renews_at": u.get("renews_at"),
     }
 
 
@@ -95,32 +108,91 @@ def current_user_sse(
     return verify_api_key(token)
 
 
-def set_session_cookie(response, api_key: str) -> None:
-    """Attach an httpOnly, SameSite=Lax session cookie (OAuth 2 BCP)."""
-    response.set_cookie(
-        key=SESSION_COOKIE,
-        value=api_key,
-        httponly=True,
-        secure=not get_settings().is_dev,
-        samesite="lax",
-        max_age=get_settings().SESSION_TTL_SECONDS,
-        path="/",
-    )
-
-
-def clear_session_cookie(response) -> None:
-    response.delete_cookie(key=SESSION_COOKIE, path="/")
-
-
-def require_credits(user: dict, cost: int = 1) -> None:
-    """Check and deduct credits. Mutates the user dict in place."""
-    credits = user.get("credits") or 0
-    if credits < cost:
+def require_positive_balance(user: dict) -> None:
+    """Gate job start: balance must be > 0. No deduction here — usage records deduct."""
+    credits = user.get("credits") or Decimal(0)
+    if credits <= 0:
+        log_step("credits.balance.too_low", f"user={user.get('sub')} | balance={credits}")
         raise HTTPException(
             status.HTTP_402_PAYMENT_REQUIRED,
-            f"insufficient credits: need {cost}, have {credits}",
+            "insufficient credit balance: subscribe or top up to start a run",
         )
+    log_step("credits.balance.ok", f"user={user.get('sub')} | balance={credits}")
+
+
+def cost_for_tokens(input_tokens: int, output_tokens: int) -> Decimal:
+    """$0.05 per 100k tokens (input + output), rounded to 6 decimals."""
+    total = Decimal(input_tokens) + Decimal(output_tokens)
+    if total <= 0:
+        return Decimal(0)
+    cost = (total / TOKENS_PER_UNIT) * PRICE_PER_100K_TOKENS
+    return cost.quantize(Decimal("0.000001"))
+
+
+def record_usage(
+    user_id: str,
+    job_uuid: str,
+    agent: str | None,
+    model: str | None,
+    input_tokens: int,
+    output_tokens: int,
+) -> Decimal:
+    """Insert a usage_events row and atomically deduct cost from users.credits.
+
+    Race-safe: the UPDATE … WHERE credits >= cost RETURNING guarantees we never
+    go negative; if the balance is too low we still log the usage but skip the
+    deduction (the user owes it — surfaced via account endpoint later).
+    Returns the cost_usd that was recorded.
+    """
+    t0 = time.perf_counter()
+    cost = cost_for_tokens(input_tokens, output_tokens)
+    log_step(
+        "usage.compute_cost",
+        f"user={user_id} | job={job_uuid} | agent={agent} | model={model} | "
+        f"in={input_tokens} out={output_tokens} | cost_usd={cost}",
+    )
     db = get_supabase()
-    new_credits = credits - cost
-    db.table("users").update({"credits": new_credits}).eq("id", user["sub"]).execute()
-    user["credits"] = new_credits
+    db.table("usage_events").insert({
+        "user_id": user_id,
+        "job_uuid": job_uuid,
+        "agent": agent,
+        "model": model,
+        "input_tokens": int(input_tokens),
+        "output_tokens": int(output_tokens),
+        "cost_usd": float(cost),
+    }).execute()
+    log_step("usage.ledger.inserted", f"job={job_uuid} | agent={agent} | cost={cost} | {(time.perf_counter()-t0)*1000:.1f}ms")
+
+    if cost > 0:
+        # Atomic conditional decrement; best-effort if balance has run dry.
+        log_step("usage.deduct.start", f"user={user_id} | cost={cost}")
+        try:
+            db.rpc(
+                "polaris_deduct_credits",
+                {"p_user_id": user_id, "p_cost": float(cost)},
+            ).execute()
+            log_step("usage.deduct.attempted", f"user={user_id} | cost={cost} | {(time.perf_counter()-t0)*1000:.1f}ms")
+        except Exception as exc:
+            # Stub/dev path has no RPC; record but don't let billing crash the worker.
+            log_step("usage.deduct.skipped", f"user={user_id} | reason={exc}")
+    return cost
+
+
+def grant_credits(user_id: str, amount_usd: Decimal | float) -> Decimal:
+    """Add to a user's USD balance (subscription grant or top-up)."""
+    amt = Decimal(str(amount_usd))
+    t0 = time.perf_counter()
+    log_step("credits.grant.start", f"user={user_id} | amount={amt}")
+    db = get_supabase()
+    rows = db.table("users").select("credits").eq("id", user_id).limit(1).execute().data
+    current = Decimal(str(rows[0]["credits"])) if rows else Decimal(0)
+    new_balance = (current + amt).quantize(Decimal("0.0001"))
+    db.table("users").update({"credits": float(new_balance)}).eq("id", user_id).execute()
+    log_step("credits.grant.done", f"user={user_id} | was={current} | now={new_balance} | {(time.perf_counter()-t0)*1000:.1f}ms")
+    return new_balance
+
+
+# Legacy alias kept for any lingering import. No-op cost=1 decrement removed —
+# gate via require_positive_balance instead.
+def require_credits(user: dict, cost: int = 1) -> None:  # pragma: no cover
+    require_positive_balance(user)

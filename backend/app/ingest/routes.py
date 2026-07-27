@@ -5,15 +5,15 @@ import time
 import uuid as _u
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from app.redis_keys import redis_keys
 
-from app.auth.sessions import current_user, require_credits
+from app.auth.sessions import current_user, require_positive_balance
 from app.config import get_settings
 from app.github import GitHubClient, GitHubUnavailable
 from app.ingest import arxiv
 from app.ingest.parser import parse
-from app.logging_utils import log_step, log_timer, POLARIS_LOGGER
+from app.logging_utils import POLARIS_LOGGER, log_step
 from app.ratelimit import limiter
+from app.redis_keys import redis_keys
 from app.schemas import IngestIn, IngestOut
 from app.store.redis import get_redis
 from app.store.supabase import get_supabase
@@ -32,7 +32,7 @@ def _repo_name(arxiv_id: str) -> str:
 async def ingest(body: IngestIn, request: Request, user: dict = Depends(current_user)):
     t0 = time.perf_counter()
     log_step("ingest.start", f"user_id={user['sub']} | arxiv={body.arxiv_url or body.arxiv_id or body.pdf_url}")
-    require_credits(user, cost=1)
+    require_positive_balance(user)
 
     t1 = time.perf_counter()
     try:

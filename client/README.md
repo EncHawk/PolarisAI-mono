@@ -1,75 +1,35 @@
-# React + TypeScript + Vite
+# polaris client (NextJS)
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+NextJS (App Router) + React 19 + Tailwind v4 + motion. Replaces the legacy
+Vite/React SPA. Google sign-in lives entirely here; the backend verifies the
+ID token once via `/auth/exchange` and returns an API key that this app stores
+in an httpOnly `polaris_session` cookie and forwards as `Authorization: Bearer`
+on every backend call.
 
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
+## Run
+```bash
+cp .env.example .env.local     # set NEXT_PUBLIC_GOOGLE_CLIENT_ID + Razorpay key
+npm install
+npm run dev                    # http://localhost:5173
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+`npm run dev` rewrites `/auth`, `/code`, `/ingest`, `/billing`, `/events`,
+`/list`, `/plan`, `/internal`, `/api` to `BACKEND_URL` (defaults to
+https://polarisai.gleeze.com). In production, point a reverse proxy at the
+FastAPI backend so the cookie travels same-origin.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Auth flow
+1. User clicks **Sign in with Google** (header or hero) → modal opens.
+2. The Google Identity Services pill is rendered inside the modal.
+3. The GIS callback POSTs the ID token to `/api/auth/callback` (a server route
+   in this app) which calls the backend's `/auth/exchange` once and writes the
+   returned API key into the httpOnly `polaris_session` cookie.
+4. While verification is in flight, the modal switches to a blue spinner state
+   so the user sees we're working on their sign-in.
+5. `middleware.ts` protects `/account`, `/ingest`, `/code`, `/plan`, `/list`.
+6. `/api/auth/signout` clears the cookie and calls backend `/auth/logout`.
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-
-```
+## Billing
+The pricing CTA wires `/billing/checkout` + `/billing/verify` to Razorpay's
+checkout.js. On successful capture the backend grants the plan's USD value to
+the user's credit balance (visible on `/account`).

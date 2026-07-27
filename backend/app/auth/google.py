@@ -1,7 +1,8 @@
-"""Google OAuth ID token verification.
+"""Google ID token verification — used only by POST /auth/exchange.
 
-The frontend (later: next-auth/google) sends us a Google ID token; we verify it,
-then upsert the user in supabase and mint our own session JWT (see sessions.py).
+Google sign-in lives entirely in the frontend (NextJS). The backend verifies
+the Google ID token exactly once to mint a Polaris API key, then never touches
+Google again.
 """
 from __future__ import annotations
 

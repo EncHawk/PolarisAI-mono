@@ -30,7 +30,7 @@ Thumbs.db
 *.log
 logs/
 
-# TypeScript / Vite
+# TypeScript
 *.tsbuildinfo
 vite.config.ts.timestamp-*
 
@@ -45,10 +45,13 @@ dump.rdb
 /tmp/
 *.tmp
 
-# ── Client (Vite + React) ────────────────────────────────────────
+# ── Client (NextJS) ──────────────────────────────────────────────
 client/node_modules/
-client/dist/
+client/.next/
 client/.env
+client/.env.local
+client/.env.*.local
+client/out/
 
 
 oauth-content.json

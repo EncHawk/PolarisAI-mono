@@ -5,7 +5,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import get_settings
-from app.logging_utils import log_request_end, log_request_start, POLARIS_LOGGER
+from app.logging_utils import POLARIS_LOGGER, log_request_end, log_request_start
 from app.ratelimit import limiter
 
 
@@ -41,13 +41,14 @@ def create_app() -> FastAPI:
 
     # routers
     from app.auth.routes import router as auth_router
-    from app.code_routes import router as code_router
     from app.billing.routes import router as billing_router
+    from app.code_routes import router as code_router
     from app.events.routes import router as events_router
     from app.health import router as health_router
     from app.ingest.routes import router as ingest_router
     from app.list.routes import router as list_router
     from app.plan_routes import router as plan_router
+    from app.usage.routes import router as usage_router
 
     app.include_router(health_router)
     app.include_router(auth_router)
@@ -57,6 +58,7 @@ def create_app() -> FastAPI:
     app.include_router(events_router)
     app.include_router(list_router)
     app.include_router(plan_router)
+    app.include_router(usage_router)
 
     @app.exception_handler(HTTPException)
     async def _http_exception(req: Request, exc: HTTPException):
