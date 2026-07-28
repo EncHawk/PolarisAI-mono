@@ -503,26 +503,16 @@ function ThanksToast() {
   )
 }
 
-export function Landing({ authed, email, name }: { authed: boolean; email: string | null; name?: string | null }) {
+export function Landing() {
   const searchParams = useSearchParams()
   const showThanks = searchParams.get('thanks') === '1'
   const { toast } = useToast()
 
   const [payError, setPayError] = useState('')
   const [paying, setPaying] = useState<PlanId | null>(null)
-  const [authedState, setAuthed] = useState(authed)
-  const [emailState, setEmail] = useState(email)
-  const [nameState, setName] = useState(name)
 
-  useEffect(() => {
-    setAuthed(authed)
-    setEmail(email)
-    setName(name)
-  }, [authed, email, name])
-
-  const onSignedIn = useCallback((signedInEmail: string) => {
-    setAuthed(true)
-    setEmail(signedInEmail)
+  const onSignedIn = useCallback((_signedInEmail: string) => {
+    window.location.href = '/code'
   }, [])
 
   // useGoogleSignIn manages the full Google sign-in lifecycle:
@@ -533,18 +523,7 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
   //                     given DOM element (used by the SignInOverlay modal).
   //   4. hasStoredId  — true if a previous id_token exists in localStorage,
   //                     indicating a returning user.
-  const { status, error, hint, signIn, retry, dismiss, renderButtonIn, hasStoredId } = useGoogleSignIn(onSignedIn)
-
-  const onSignOut = useCallback(async () => {
-    try {
-      await fetch('/api/auth/signout', { method: 'POST' })
-    } catch {
-      /* ignore */
-    }
-    setAuthed(false)
-    setEmail(null)
-    setName(null)
-  }, [])
+  const { status, error, hint, signIn, retry, dismiss, renderButtonIn } = useGoogleSignIn(onSignedIn)
 
   const onPay = useCallback(async (plan: PlanId) => {
     setPayError('')
@@ -561,7 +540,7 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
   return (
     <div className="relative overflow-x-clip bg-bg text-text">
       {showThanks && <ThanksToast />}
-      <Header authed={authedState} email={emailState} name={nameState} onSignIn={signIn} />
+      <Header onSignIn={signIn} />
       <ScrollLine />
       <SignInOverlay status={status} error={error} hint={hint} onRetry={retry} onDismiss={dismiss} buttonRef={renderButtonIn} />
 
@@ -592,19 +571,7 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
               Every paper gets a sandbox to run <em className="not-italic text-blue text-lg sm:text-xl">Benchmarks</em>.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3 sm:gap-4">
-              {/*
-               * Get Started — two modes:
-               * 1. Not signed in (authedState=false) → button calls signIn() which:
-               *    a. Opens the SignInOverlay modal with a Google Sign-In button
-               *    b. Also fires Google One Tap (popup) as a faster path
-               *    c. On success, stores id_token in localStorage and sets authedState=true
-               * 2. Signed in (authedState=true) → link directly to /code workspace
-               */}
-              {!authedState ? (
-                <SectionCTA onClick={signIn} type="button">Get started</SectionCTA>
-              ) : (
-                <SectionCTA href="/code">Get started</SectionCTA>
-              )}
+              <SectionCTA onClick={signIn} type="button">Get started</SectionCTA>
               <SectionCTA href="/#how" primary={false}>How it works</SectionCTA>
             </div>
           </Reveal>
