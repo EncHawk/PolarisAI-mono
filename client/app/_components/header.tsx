@@ -106,12 +106,6 @@ export function Header({ authed, email, name, onSignIn }: HeaderProps) {
         <a href="/#how" className="transition hover:text-blue">How it works</a>
       </nav>
       <div className="flex items-center gap-3">
-        <a
-          href="/code"
-          className="btn-sheen hidden h-10 items-center rounded-[10px] bg-blue px-5 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(5,98,239,0.28)] sm:inline-flex"
-        >
-          Get started
-        </a>
         {authed ? (
           <UserBubble email={email} name={name} onSignOut={onSignOut} />
         ) : (
