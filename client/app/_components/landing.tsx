@@ -621,16 +621,9 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
         />
         <div className="relative z-20 mx-auto w-full max-w-[1200px]">
           <Reveal>
-            <p className="mb-4 font-mono text-[11px] font-medium tracking-[0.16em] text-blue uppercase">
-              Pricing
-            </p>
             <h2 className="max-w-[16ch] font-display text-[clamp(2rem,4.5vw,3.5rem)] leading-[1.02] font-medium tracking-[-0.03em]">
-              Pay for proof, <span className="text-text3">not promises.</span>
+              Pricing
             </h2>
-            <p className="mt-5 max-w-[34rem] text-[15px] leading-relaxed text-text3">
-              Credits are USD. Every 100k tokens (input + output) costs $0.05 — deducted on run completion.
-              Subscribe monthly, reuse the balance for any agent.
-            </p>
           </Reveal>
           {payError ? (
             <p className="relative z-20 mt-6 rounded-xl border border-amber/40 bg-white px-4 py-3 text-sm text-navy">
