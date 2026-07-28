@@ -21,6 +21,9 @@ export default async function CodePage() {
   if (!account) {
     redirect('/?signin=1')
   }
+  if (account.credits <= 0) {
+    redirect('/?payment_required=1#pricing')
+  }
 
   const res = await authedFetch('/list')
   let papers: Paper[] = []

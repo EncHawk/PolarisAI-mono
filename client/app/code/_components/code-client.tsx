@@ -645,9 +645,7 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
     <div className="flex h-screen flex-col bg-bg text-text">
       <div className='flex flex-row items-center justify-center gap-2 bg-neutral-200 max-w-110 w-full text-center text-neutral-600 text-sm rounded-full mb-2 mx-auto mt-2 px-4 py-1.5'>
         <span className='inline-block w-[5px] h-[5px] rounded-full bg-amber-500 animate-pulse shrink-0'></span>
-        <p>
-          We&#39;re Experiencing increased Error rates from LLM providers.
-        </p>
+        <span className="truncate">Elevated error rates from LLM providers &mdash; we're on it.</span>
       </div>
       {/* Top bar */}
       <div className="flex items-center justify-between border-b border-border px-4 py-2">

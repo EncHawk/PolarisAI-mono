@@ -503,9 +503,37 @@ function ThanksToast() {
   )
 }
 
+function PaymentBanner() {
+  const [visible, setVisible] = useState(true)
+  if (!visible) return null
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -12 }}
+      className="fixed top-24 left-1/2 z-[60] w-[min(500px,calc(100%-2rem))] -translate-x-1/2 rounded-xl border border-amber-200 bg-amber-50 px-5 py-3 shadow-lg"
+    >
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-amber-900 font-medium">
+          You need a plan to use Polaris. Choose one below to get started.
+        </p>
+        <button
+          type="button"
+          onClick={() => setVisible(false)}
+          className="grid h-6 w-6 place-items-center rounded-full text-amber-500 transition hover:bg-amber-100 hover:text-amber-700 shrink-0"
+          aria-label="Dismiss"
+        >
+          ×
+        </button>
+      </div>
+    </motion.div>
+  )
+}
+
 export function Landing({ authed, email, name }: { authed: boolean; email: string | null; name?: string | null }) {
   const searchParams = useSearchParams()
   const showThanks = searchParams.get('thanks') === '1'
+  const showPaymentRequired = searchParams.get('payment_required') === '1'
   const { toast } = useToast()
 
   const [payError, setPayError] = useState('')
@@ -561,7 +589,8 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
   return (
     <div className="relative overflow-x-clip bg-bg text-text">
       {showThanks && <ThanksToast />}
-      <Header authed={authedState} email={emailState} name={nameState} onSignIn={signIn} />
+      {showPaymentRequired && <PaymentBanner />}
+      <Header authed={authedState} onSignIn={signIn} />
       <ScrollLine />
       <SignInOverlay status={status} error={error} hint={hint} onRetry={retry} onDismiss={dismiss} buttonRef={renderButtonIn} />
 
