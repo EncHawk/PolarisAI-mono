@@ -100,11 +100,11 @@ function RotatingHero() {
     return () => clearInterval(t)
   }, [reduce])
   return (
-    <div className="relative h-7 overflow-hidden">
+    <div className="relative overflow-hidden sm:h-7">
       <AnimatePresence mode="wait">
         <motion.p
           key={i}
-          className="font-mono text-[13px] font-medium tracking-[0.12em] text-blue uppercase"
+          className="font-mono text-[12px] font-medium tracking-[0.12em] text-blue uppercase sm:text-[13px] sm:whitespace-nowrap"
           initial={reduce ? false : { y: 18, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           exit={reduce ? undefined : { y: -18, opacity: 0 }}
@@ -163,7 +163,7 @@ const agents = [
 
 function AgentCard({ agent, index }: { agent: (typeof agents)[number]; index: number }) {
   return (
-    <div className="card-shine flex h-full flex-col justify-between rounded-3xl border border-border bg-white p-10">
+    <div className="card-shine flex h-full flex-col justify-between rounded-3xl border border-border bg-white p-6 sm:p-10">
       <div>
         <div className="flex items-center gap-4">
           <span className="font-mono text-sm text-text4">0{index + 1} / 04</span>
