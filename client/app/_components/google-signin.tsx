@@ -114,9 +114,9 @@ export function useGoogleSignIn(onSignedIn: (email: string) => void) {
 
   const readyRef = useRef(false)
   const buttonContainerRef = useRef<HTMLDivElement | null>(null)
-  const renderButtonIn = useCallback((container: HTMLDivElement) => {
+  const renderButtonIn = useCallback((container: HTMLDivElement | null) => {
     buttonContainerRef.current = container
-    if (!window.google?.accounts?.id || !clientId) return
+    if (!container || !window.google?.accounts?.id || !clientId) return
     window.google.accounts.id.renderButton(container, {
       type: 'standard',
       size: 'large',

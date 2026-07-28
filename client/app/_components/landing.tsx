@@ -574,6 +574,15 @@ export function Landing({ authed, email, name }: { authed: boolean; email: strin
       >
         <div className="relative z-20 mx-auto w-full max-w-[1120px]">
           <Reveal>
+            <div className='flex flex-row items-center justify-center
+             bg-neutral-200 max-w-110   w-full text-center text-neutral-600 text-sm rounded-full relative
+             mb-2
+             '>
+              <span className='rounded-full w-[5px] h-[5px] absolute top-[7px] bottom-0.5 left-2 bg-amber-500 animate-pulse'></span>
+              <p>
+                We're Experiencing increased Error rates from LLM providers. 
+              </p>
+            </div>
             <RotatingHero />
             <h1 className="mt-6 w-full max-w-[18ch] font-display text-[clamp(2rem,7vw,5.4rem)] leading-[0.98] font-medium tracking-[-0.03em] text-text sm:leading-[0.94] sm:tracking-[-0.04em]">
               The Runtime environment for any ML Paper<em className="not-italic text-blue">.</em>
