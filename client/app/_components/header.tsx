@@ -1,7 +1,6 @@
 'use client'
 
 import { motion } from 'motion/react'
-import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 interface HeaderProps {
@@ -60,7 +59,6 @@ function UserBubble({ email, name, onSignOut }: { email: string | null; name?: s
 
 export function Header({ authed, email, name, onSignIn }: HeaderProps) {
   const [scrolled, setScrolled] = useState(false)
-  const router = useRouter()
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 20)
@@ -75,9 +73,8 @@ export function Header({ authed, email, name, onSignIn }: HeaderProps) {
     } catch {
       /* ignore */
     }
-    router.push('/?thanks=1')
-    router.refresh()
-  }, [router])
+    window.location.href = '/?thanks=1'
+  }, [])
 
   return (
     <motion.header

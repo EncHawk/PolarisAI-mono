@@ -13,6 +13,12 @@ export async function POST() {
     }).catch(() => {})
   }
   const response = NextResponse.json({ ok: true })
-  response.cookies.delete(SESSION_COOKIE)
+  response.cookies.set(SESSION_COOKIE, '', {
+    path: '/',
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: process.env.NODE_ENV === 'production',
+    maxAge: 0,
+  })
   return response
 }

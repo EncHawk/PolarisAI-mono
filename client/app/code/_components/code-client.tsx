@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
-import { useRouter } from 'next/navigation'
 import Prism from 'prismjs'
 import 'prismjs/components/prism-python'
 import 'prismjs/themes/prism-tomorrow.css'
@@ -74,7 +73,6 @@ function formatTime(d: Date) {
 }
 
 function UserBubble({ account }: { account: Account }) {
-  const router = useRouter()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -93,8 +91,7 @@ function UserBubble({ account }: { account: Account }) {
     } catch {
       /* ignore */
     }
-    router.push('/?thanks=1')
-    router.refresh()
+    window.location.href = '/?thanks=1'
   }
 
   const initial = (account.name || account.email).charAt(0).toUpperCase()
@@ -646,8 +643,8 @@ export function CodeClient({ account, papers, isPro }: { account: Account; paper
 
   return (
     <div className="flex h-screen flex-col bg-bg text-text">
-      <div className='flex flex-row items-center justify-center bg-neutral-200 max-w-110 w-full text-center text-neutral-600 text-sm rounded-full relative mb-2 mx-auto mt-2 px-4 py-1.5'>
-        <span className='rounded-full w-[5px] h-[5px] absolute top-[7px] bottom-0.5 left-2 bg-amber-500 animate-pulse'></span>
+      <div className='flex flex-row items-center justify-center gap-2 bg-neutral-200 max-w-110 w-full text-center text-neutral-600 text-sm rounded-full mb-2 mx-auto mt-2 px-4 py-1.5'>
+        <span className='inline-block w-[5px] h-[5px] rounded-full bg-amber-500 animate-pulse shrink-0'></span>
         <p>
           We&#39;re Experiencing increased Error rates from LLM providers.
         </p>
