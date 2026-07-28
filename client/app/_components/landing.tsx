@@ -503,16 +503,26 @@ function ThanksToast() {
   )
 }
 
-export function Landing({ authed }: { authed?: boolean }) {
+export function Landing({ authed, email, name }: { authed: boolean; email: string | null; name?: string | null }) {
   const searchParams = useSearchParams()
   const showThanks = searchParams.get('thanks') === '1'
   const { toast } = useToast()
 
   const [payError, setPayError] = useState('')
   const [paying, setPaying] = useState<PlanId | null>(null)
+  const [authedState, setAuthed] = useState(authed)
+  const [emailState, setEmail] = useState(email)
+  const [nameState, setName] = useState(name)
 
-  const onSignedIn = useCallback((_signedInEmail: string) => {
-    window.location.href = '/code'
+  useEffect(() => {
+    setAuthed(authed)
+    setEmail(email)
+    setName(name)
+  }, [authed, email, name])
+
+  const onSignedIn = useCallback((signedInEmail: string) => {
+    setAuthed(true)
+    setEmail(signedInEmail)
   }, [])
 
   // useGoogleSignIn manages the full Google sign-in lifecycle:
@@ -523,7 +533,18 @@ export function Landing({ authed }: { authed?: boolean }) {
   //                     given DOM element (used by the SignInOverlay modal).
   //   4. hasStoredId  — true if a previous id_token exists in localStorage,
   //                     indicating a returning user.
-  const { status, error, hint, signIn, retry, dismiss, renderButtonIn } = useGoogleSignIn(onSignedIn)
+  const { status, error, hint, signIn, retry, dismiss, renderButtonIn, hasStoredId } = useGoogleSignIn(onSignedIn)
+
+  const onSignOut = useCallback(async () => {
+    try {
+      await fetch('/api/auth/signout', { method: 'POST' })
+    } catch {
+      /* ignore */
+    }
+    setAuthed(false)
+    setEmail(null)
+    setName(null)
+  }, [])
 
   const onPay = useCallback(async (plan: PlanId) => {
     setPayError('')
@@ -540,7 +561,7 @@ export function Landing({ authed }: { authed?: boolean }) {
   return (
     <div className="relative overflow-x-clip bg-bg text-text">
       {showThanks && <ThanksToast />}
-      <Header onSignIn={signIn} authed={authed} />
+      <Header authed={authedState} email={emailState} name={nameState} onSignIn={signIn} />
       <ScrollLine />
       <SignInOverlay status={status} error={error} hint={hint} onRetry={retry} onDismiss={dismiss} buttonRef={renderButtonIn} />
 
@@ -553,15 +574,6 @@ export function Landing({ authed }: { authed?: boolean }) {
       >
         <div className="relative z-20 mx-auto w-full max-w-[1120px]">
           <Reveal>
-            <div className='flex flex-row items-center justify-center
-             bg-neutral-200 max-w-110   w-full text-center text-neutral-600 text-sm rounded-full relative
-             mb-2
-             '>
-              <span className='rounded-full w-[5px] h-[5px] absolute top-[7px] bottom-0.5 left-2 bg-amber-500 animate-pulse'></span>
-              <p>
-                We're Experiencing increased Error rates from LLM providers. 
-              </p>
-            </div>
             <RotatingHero />
             <h1 className="mt-6 w-full max-w-[18ch] font-display text-[clamp(2rem,7vw,5.4rem)] leading-[0.98] font-medium tracking-[-0.03em] text-text sm:leading-[0.94] sm:tracking-[-0.04em]">
               The Runtime environment for any ML Paper<em className="not-italic text-blue">.</em>
@@ -571,10 +583,18 @@ export function Landing({ authed }: { authed?: boolean }) {
               Every paper gets a sandbox to run <em className="not-italic text-blue text-lg sm:text-xl">Benchmarks</em>.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3 sm:gap-4">
-              {authed ? (
-                <SectionCTA href="/code">Get started</SectionCTA>
-              ) : (
+              {/*
+               * Get Started — two modes:
+               * 1. Not signed in (authedState=false) → button calls signIn() which:
+               *    a. Opens the SignInOverlay modal with a Google Sign-In button
+               *    b. Also fires Google One Tap (popup) as a faster path
+               *    c. On success, stores id_token in localStorage and sets authedState=true
+               * 2. Signed in (authedState=true) → link directly to /code workspace
+               */}
+              {!authedState ? (
                 <SectionCTA onClick={signIn} type="button">Get started</SectionCTA>
+              ) : (
+                <SectionCTA href="/code">Get started</SectionCTA>
               )}
               <SectionCTA href="/#how" primary={false}>How it works</SectionCTA>
             </div>
