@@ -87,6 +87,7 @@ def run_read(state: WorkerState) -> dict:
     prompt = build_prompt()
 
     draft: ReadResult | None = None
+    prev_dump: dict | None = None
     for i in range(s.AGENT_MAX_STEPS):
         step(job_uuid, AgentName.READ, f"read-iter-{i+1}",
              tool="llm:DeepInfra(OpenAI)",
@@ -101,10 +102,20 @@ def run_read(state: WorkerState) -> dict:
             step(job_uuid, AgentName.READ, f"read-iter-{i+1}-failed",
                  tool="llm:DeepInfra(OpenAI)", conclusion=f"call failed: {e}")
             break
+
+        current_dump = result.model_dump()
+        if prev_dump and current_dump == prev_dump and not result.ready:
+            step(job_uuid, AgentName.READ, f"read-iter-{i+1}-stuck",
+                 tool="llm:DeepInfra(OpenAI)",
+                 conclusion="duplicate output detected, breaking loop")
+            draft = result
+            break
+        prev_dump = current_dump
         draft = result
+
         output(job_uuid, AgentName.READ,
                conclusion=f"iter {i+1}: aim='{result.aim[:80]}' "
-                         f"ready={result.ready} citations={len(result.relevant_citations)}",
+                          f"ready={result.ready} citations={len(result.relevant_citations)}",
                output_query=result.output_query)
         if result.ready or i == s.AGENT_MAX_STEPS - 1:
             break

@@ -66,6 +66,7 @@ def run_plan(state: WorkerState) -> dict:
     prompt = build_prompt()
 
     draft: PlanResult | None = None
+    prev_dump: dict | None = None
     read_blob = json.dumps(state.get("read") or {}, indent=2)[:15000]
     research_blob = json.dumps(state.get("research") or {}, indent=2)[:15000]
 
@@ -75,7 +76,7 @@ def run_plan(state: WorkerState) -> dict:
              conclusion=f"{len(draft.plan) if draft else 0} steps planned",
              output_query=(draft.output_query if draft else "draft plan"))
         try:
-            draft = structured.invoke(prompt.format_messages(
+            result = structured.invoke(prompt.format_messages(
                 read=read_blob,
                 research=research_blob,
                 feedback=str(state.get("plan_feedback") or "(none)"),
@@ -85,10 +86,21 @@ def run_plan(state: WorkerState) -> dict:
             step(job_uuid, AgentName.PLAN, f"plan-iter-{i+1}-failed",
                  tool="llm:DeepInfra(OpenAI)", conclusion=f"call failed: {e}")
             break
+
+        current_dump = result.model_dump()
+        if prev_dump and current_dump == prev_dump and not result.ready:
+            step(job_uuid, AgentName.PLAN, f"plan-iter-{i+1}-stuck",
+                 tool="llm:DeepInfra(OpenAI)",
+                 conclusion="duplicate output detected, breaking loop")
+            draft = result
+            break
+        prev_dump = current_dump
+        draft = result
+
         output(job_uuid, AgentName.PLAN,
                conclusion=f"iter {i+1}: {len(draft.plan)} plan steps, "
-                         f"custom_kernels={'yes' if draft.custom_kernels else 'no'}, "
-                         f"ready={draft.ready}",
+                          f"custom_kernels={'yes' if draft.custom_kernels else 'no'}, "
+                          f"ready={draft.ready}",
                output_query=draft.output_query)
         if draft.ready or i == 3:
             break

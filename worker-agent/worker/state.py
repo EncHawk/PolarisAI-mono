@@ -70,6 +70,8 @@ class WorkerState(TypedDict, total=False):
     status: str
     error: str | None
     timer: object | None                 # PipelineTimer instance (populated by main.py)
+    _prev_agent_outputs: dict[str, str]  # agent -> hash of last output (cross-run dedup)
+    plan_feedback: str                   # user feedback on a rejected plan
 
 
 def mark_agent_run(state: WorkerState, agent: str) -> dict[str, int]:

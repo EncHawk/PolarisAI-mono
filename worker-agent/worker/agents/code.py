@@ -38,7 +38,9 @@ SYSTEM = """You are the CODE agent for an automated paper-reproduction pipeline.
 Implement the paper's claim in PyTorch (or raw Python where the paper specifies).
 Rules:
 - Each file does ONE thing only (no mega-files).
-- Pure PyTorch / raw Python; no exotic deps unless the paper forces it.
+- Use PyTorch as the primary framework. HuggingFace (transformers, datasets, accelerate, diffusers, peft, trl) is available — use it when appropriate.
+- TensorFlow / Keras is also available but NOT recommended unless the paper specifically uses it.
+- You may `pip install` any Python package needed. Include install instructions in notes.
 - Provide a runnable entry-point (e.g. `reproduce.py`) and an install step in notes.
 - Generate a `README.md` with a good-looking overview, install/run instructions, and a results summary.
 - The README MUST link to the paper's arXiv URL (https://arxiv.org/abs/<arxiv_id>).
@@ -48,7 +50,7 @@ Output format (exactly):
 
 ```json
 {{
-  "notes": "pip install torch ... ; run with: python reproduce.py",
+  "notes": "pip install torch transformers datasets ... ; run with: python reproduce.py",
   "ready": false,
   "output_query": "one sentence on what to fix next",
   "files": [
@@ -170,6 +172,7 @@ def run_code(state: WorkerState) -> dict:
     github_url = state.get("github_url") or repo.html_url(repo_name)
     accumulated_logs: list[dict] = []
     draft: Iteration | None = None
+    prev_key: tuple | None = None
     push_error = ""
 
     if existing:
@@ -220,11 +223,22 @@ def run_code(state: WorkerState) -> dict:
                 draft=(draft.notes if draft else "(none)"),
             ))
             text = str(getattr(raw, "content", raw))
-            draft = _parse_iteration(text)
+            result = _parse_iteration(text)
         except Exception as e:
             step(job_uuid, AgentName.CODE, f"code-iter-{i+1}-failed",
                  tool="llm:DeepInfra(OpenAI)", conclusion=f"call failed: {e}")
             break
+
+        current_key = (tuple(sorted((f["path"], f["contents"]) for f in result.files)),
+                       result.notes, result.ready)
+        if prev_key and current_key == prev_key and not result.ready:
+            step(job_uuid, AgentName.CODE, f"code-iter-{i+1}-stuck",
+                 tool="llm:DeepInfra(OpenAI)",
+                 conclusion="duplicate output detected, breaking loop")
+            draft = result
+            break
+        prev_key = current_key
+        draft = result
 
         # write all files into the sandbox
         for f in draft.files:

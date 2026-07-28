@@ -30,6 +30,10 @@ def parse_json_or_none(text: str, model: type[T]) -> T | None:
         return None
 
 
+def is_repeated_output(prev: dict | None, current: dict) -> bool:
+    return prev is not None and prev == current
+
+
 def load_paper_markdown(paper_id: str) -> str:
     """Fetch the parsed markdown from the redis cache the backend stashes at
     `polaris:markdown:{paper_id}` (TTL 1 week)."""

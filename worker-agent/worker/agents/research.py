@@ -7,11 +7,14 @@ For each relevant citation the READ agent surfaced, fetch that citation's paper
 """
 from __future__ import annotations
 
+import json
+import re
+
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 from shared.trace import AgentName
 
-from worker._util import update_paper_status
+from worker._util import parse_json_or_none, update_paper_status
 from worker.config import get_settings
 from worker.models import make_llm
 from worker.state import WorkerState, mark_agent_run
@@ -36,7 +39,8 @@ The READ agent already gave you its understanding of the main paper and its list
 the arxiv tool). Produce:
   - what_it_claims : what the cited paper does AND claims (a vague READ, not a full READ)
   - how_used       : how the main paper uses this citation in its approach
-Be concise. Set ready=True once you've covered the citations provided.
+Be concise. Set ready=True once you've covered ALL the citations provided.
+Output ONLY valid JSON. Do NOT include HTML, XML, or markdown tags.
 """
 
 
@@ -71,15 +75,14 @@ def run_research(state: WorkerState) -> dict:
         })
 
     llm = make_llm("RESEARCH", job_uuid)
-    structured = llm.with_structured_output(ResearchResult)
     prompt = ChatPromptTemplate.from_messages([
         ("system", SYSTEM),
         ("human", "MAIN PAPER AIM:\n{aim}\n\nMAIN PAPER NOVEL APPROACH:\n{novel}\n\n"
                   "CITATIONS (with abstracts):\n{citations}\n\nLatest draft:\n{draft}"),
     ])
 
-    import json
     draft: ResearchResult | None = None
+    prev_dump: dict | None = None
     cit_blob = json.dumps(enriched, indent=2)[:40000]
     novel = json.dumps(read.get("novel_approach", {}))[:2000]
 
@@ -89,22 +92,59 @@ def run_research(state: WorkerState) -> dict:
              conclusion=f"covered {len(draft.citations) if draft else 0} citations",
              output_query=(draft.output_query if draft else ""))
         try:
-            draft = structured.invoke(prompt.format_messages(
+            raw = llm.invoke(prompt.format_messages(
                 aim=str(read.get("aim", ""))[:2000],
                 novel=novel,
                 citations=cit_blob,
                 draft=(draft.model_dump_json() if draft else "(none)"),
             ))
+            text = str(getattr(raw, "content", raw))
+            text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+            result = parse_json_or_none(text, ResearchResult)
+            if result is None:
+                raise ValueError(f"Could not parse ResearchResult from response")
         except Exception as e:
             step(job_uuid, AgentName.RESEARCH, f"research-iter-{i+1}-failed",
                  tool="llm:DeepInfra(OpenAI)", conclusion=f"call failed: {e}")
+            continue
+
+        current_dump = result.model_dump()
+        if prev_dump and current_dump == prev_dump and not result.ready:
+            step(job_uuid, AgentName.RESEARCH, f"research-iter-{i+1}-stuck",
+                 tool="llm:DeepInfra(OpenAI)",
+                 conclusion="duplicate output detected, breaking loop")
+            draft = result
             break
+        prev_dump = current_dump
+        draft = result
+
         output(job_uuid, AgentName.RESEARCH,
                conclusion=f"iter {i+1}: covered {len(draft.citations)} citations "
                           f"ready={draft.ready}",
                output_query=draft.output_query)
         if draft.ready or i == 2:
             break
+
+    # Enforce minimum citation coverage: never return 0 citations when papers were provided
+    if draft:
+        covered_ids = {n.arxiv_id for n in draft.citations}
+        for c in enriched:
+            aid = c.get("arxiv_id") or ""
+            if aid and aid not in covered_ids:
+                draft.citations.append(CitationNote(
+                    arxiv_id=aid,
+                    what_it_claims="citation analysis unavailable",
+                    how_used="",
+                ))
+    elif enriched:
+        draft = ResearchResult(
+            citations=[CitationNote(arxiv_id=c.get("arxiv_id", ""),
+                                     what_it_claims="citation analysis unavailable",
+                                     how_used="")
+                       for c in enriched],
+            ready=False,
+            output_query="research produced no structured output",
+        )
 
     notes = []
     if draft:
