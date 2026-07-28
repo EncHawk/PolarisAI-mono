@@ -503,7 +503,7 @@ function ThanksToast() {
   )
 }
 
-export function Landing() {
+export function Landing({ authed }: { authed?: boolean }) {
   const searchParams = useSearchParams()
   const showThanks = searchParams.get('thanks') === '1'
   const { toast } = useToast()
@@ -571,7 +571,11 @@ export function Landing() {
               Every paper gets a sandbox to run <em className="not-italic text-blue text-lg sm:text-xl">Benchmarks</em>.
             </p>
             <div className="mt-10 flex flex-wrap items-center gap-3 sm:gap-4">
-              <SectionCTA onClick={signIn} type="button">Get started</SectionCTA>
+              {authed ? (
+                <SectionCTA href="/code">Get started</SectionCTA>
+              ) : (
+                <SectionCTA onClick={signIn} type="button">Get started</SectionCTA>
+              )}
               <SectionCTA href="/#how" primary={false}>How it works</SectionCTA>
             </div>
           </Reveal>
