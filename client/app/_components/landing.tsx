@@ -540,7 +540,7 @@ export function Landing({ authed }: { authed?: boolean }) {
   return (
     <div className="relative overflow-x-clip bg-bg text-text">
       {showThanks && <ThanksToast />}
-      <Header onSignIn={signIn} />
+      <Header onSignIn={signIn} authed={authed} />
       <ScrollLine />
       <SignInOverlay status={status} error={error} hint={hint} onRetry={retry} onDismiss={dismiss} buttonRef={renderButtonIn} />
 

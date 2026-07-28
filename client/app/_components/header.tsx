@@ -5,9 +5,10 @@ import { useEffect, useState } from 'react'
 
 interface HeaderProps {
   onSignIn: () => void
+  authed?: boolean
 }
 
-export function Header({ onSignIn }: HeaderProps) {
+export function Header({ onSignIn, authed = false }: HeaderProps) {
   const [scrolled, setScrolled] = useState(false)
 
   useEffect(() => {
@@ -44,13 +45,22 @@ export function Header({ onSignIn }: HeaderProps) {
         <a href="/#how" className="transition hover:text-blue">How it works</a>
       </nav>
       <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={onSignIn}
-          className="btn-sheen inline-flex h-10 items-center rounded-[10px] bg-blue px-5 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(5,98,239,0.28)]"
-        >
-          Sign in
-        </button>
+        {authed ? (
+          <a
+            href="/code"
+            className="btn-sheen inline-flex h-10 items-center rounded-[10px] bg-blue px-5 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(5,98,239,0.28)]"
+          >
+            Go to Code
+          </a>
+        ) : (
+          <button
+            type="button"
+            onClick={onSignIn}
+            className="btn-sheen inline-flex h-10 items-center rounded-[10px] bg-blue px-5 text-xs font-bold text-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgba(5,98,239,0.28)]"
+          >
+            Sign in
+          </button>
+        )}
       </div>
     </motion.header>
   )
