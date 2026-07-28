@@ -125,3 +125,16 @@ drop trigger if exists code_set_updated_at on code;
 create trigger code_set_updated_at
   before update on code
   for each row execute function polaris_set_updated_at();
+
+-- code_checkpoints: durable snapshots of CODE agent progress for resume
+create table if not exists code_checkpoints (
+    id          uuid primary key default gen_random_uuid(),
+    user_id     uuid not null references users(id) on delete cascade,
+    paper_id    uuid references papers(id) on delete set null,
+    session_id  uuid not null,
+    job_id      text not null,
+    code        jsonb not null,
+    created_at  timestamptz default now()
+);
+create index if not exists ck_session_idx on code_checkpoints(session_id, created_at desc);
+create index if not exists ck_user_idx  on code_checkpoints(user_id, created_at desc);
